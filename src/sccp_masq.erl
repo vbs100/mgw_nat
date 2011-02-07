@@ -19,7 +19,7 @@
 
 -module(sccp_masq).
 -author('Harald Welte <laforge@gnumonks.org>').
--include("sccp.hrl").
+-include_lib("osmo_ss7/include/sccp.hrl").
 
 -export([sccp_masq_msg/3, init/0, reset/0]).
 

@@ -25,10 +25,10 @@
 %-include_lib("kernel/include/inet.hrl").
 %-include_lib("kernel/include/inet_sctp.hrl").
 
--include("m2ua.hrl").
--include("mtp3.hrl").
--include("isup.hrl").
--include("sccp.hrl").
+-include_lib("osmo_ss7/include/m2ua.hrl").
+-include_lib("osmo_ss7/include/mtp3.hrl").
+-include_lib("osmo_ss7/include/isup.hrl").
+-include_lib("osmo_ss7/include/sccp.hrl").
 
 % mangle the received data
 mangle_rx_data(L, From, Data) when is_binary(Data) ->
