@@ -22,6 +22,9 @@
 -author("Harald Welte <laforge@gnumonks.org>").
 -export([mangle_rx_data/3]).
 
+% exports belwo needed by map_masq.erl
+-export([isup_party_internationalize/2, isup_party_nationalize/2]).
+
 %-include_lib("kernel/include/inet.hrl").
 %-include_lib("kernel/include/inet_sctp.hrl").
 
@@ -145,6 +148,7 @@ mangle_rx_calling(_From, Addr) ->
 	Addr.
 
 mangle_rx_sccp(From, ?SCCP_MSGT_UDT, Msg = #sccp_msg{parameters = Opts}) ->
+	% Mangle the SCCP Calling / Called Addresses
 	CalledParty = proplists:get_value(called_party_addr, Opts),
 	CalledPartyNew = mangle_rx_called(From, CalledParty),
 	CallingParty = proplists:get_value(calling_party_addr, Opts),
@@ -153,7 +157,14 @@ mangle_rx_sccp(From, ?SCCP_MSGT_UDT, Msg = #sccp_msg{parameters = Opts}) ->
 				 {called_party_addr, CalledPartyNew}),
 	Opts2 = lists:keyreplace(calling_party_addr, 1, Opts1,
 				 {calling_party_addr, CallingPartyNew}),
-	Msg#sccp_msg{parameters = Opts2};
+	% Mangle the actual MAP payload inside the UDT data portion
+	UserData = proplists:get_value(user_data, Opts),
+	MapDec = map_codec:parse_tcap_msg(UserData),
+	MapDecNew = map_masq:mangle_map(MapDec),
+	MapEncNew = map_codec:encode_tcap_msg(MapDecNew),
+	Opts3 = lists:keyreplace(user_data, 1, Opts2,
+				 {user_data, MapEncNew}),
+	Msg#sccp_msg{parameters = Opts3};
 mangle_rx_sccp(_From, _MsgType, Msg) ->
 	Msg.
 
@@ -190,12 +201,12 @@ mangle_isup_number(from_stp, ?ISUP_MSGT_IAM, NumType, PartyNum) ->
 	case NumType of
 		?ISUP_PAR_CALLED_P_NUM ->
 			% First convert to international number, if it is national
-			Num1 = isup_party_internationalize(PartyNum,
-						application:get_env(intern_pfx)),
+			{ok, InternPfx} = application:get_env(intern_pfx),
+			{ok, MsrnPfxStp} = application:get_env(msrn_pfx_stp),
+			{ok, MsrnPfxMsc} = application:get_env(msrn_pfx_msc),
+			Num1 = isup_party_internationalize(PartyNum, InternPfx),
 			io:format("IAM MSRN rewrite (STP->MSC): "),
-			isup_party_replace_prefix(Num1,
-						application:get_env(msrn_pfx_stp),
-						application:get_env(msrn_pfx_msc));
+			isup_party_replace_prefix(Num1, MsrnPfxStp, MsrnPfxMsc);
 		_ ->
 			PartyNum
 	end;
@@ -204,13 +215,13 @@ mangle_isup_number(from_msc, MsgT, NumType, PartyNum) when MsgT == ?ISUP_MSGT_CO
 							   MsgT == ?ISUP_MSGT_ANM ->
 	case NumType of
 		?ISUP_PAR_CONNECTED_NUM ->
+			{ok, InternPfx} = application:get_env(intern_pfx),
+			{ok, MsrnPfxStp} = application:get_env(msrn_pfx_stp),
+			{ok, MsrnPfxMsc} = application:get_env(msrn_pfx_msc),
 			io:format("CON MSRN rewrite (MSC->STP): "),
-			Num1 = isup_party_replace_prefix(PartyNum,
-						application:get_env(msrn_pfx_msc),
-						application:get_env(msrn_pfx_stp)),
+			Num1 = isup_party_replace_prefix(PartyNum, MsrnPfxStp, MsrnPfxMsc),
 			% Second: convert to national number, if it is international
-			isup_party_nationalize(Num1,
-						application:get_env(intern_pfx));
+			isup_party_nationalize(Num1, InternPfx);
 		_ ->
 			PartyNum
 	end;
@@ -218,8 +229,8 @@ mangle_isup_number(from_msc, MsgT, NumType, PartyNum) when MsgT == ?ISUP_MSGT_CO
 mangle_isup_number(from_msc, ?ISUP_MSGT_IAM, NumType, PartyNum) ->
 	case NumType of
 		?ISUP_PAR_CALLED_P_NUM ->
-			isup_party_nationalize(PartyNum,
-						applicaiton:get_env(intern_pfx));
+			{ok, InternPfx} = application:get_env(intern_pfx),
+			isup_party_nationalize(PartyNum, InternPfx);
 		_ ->
 			PartyNum
 	end;
@@ -228,8 +239,8 @@ mangle_isup_number(from_stp, MsgT, NumType, PartyNum) when MsgT == ?ISUP_MSGT_CO
 							   MsgT == ?ISUP_MSGT_ANM ->
 	case NumType of
 		?ISUP_PAR_CONNECTED_NUM ->
-			isup_party_internationalize(PartyNum,
-						application:get_env(intern_pfx));
+			{ok, InternPfx} = application:get_env(intern_pfx),
+			isup_party_internationalize(PartyNum, InternPfx);
 		_ ->
 			PartyNum
 	end;
@@ -239,8 +250,7 @@ mangle_isup_number(from_msc, _, _, PartyNum) ->
 
 % replace the prefix of PartyNum with NewPfx _if_ the current prefix matches MatchPfx
 isup_party_replace_prefix(PartyNum, MatchPfx, NewPfxInt) ->
-	IntIn = PartyNum#party_number.phone_number,
-	DigitsIn = osmo_util:int2digit_list(IntIn),
+	DigitsIn = PartyNum#party_number.phone_number,
 	NewPfx = osmo_util:int2digit_list(NewPfxInt),
 	MatchPfxLen = length(MatchPfx),
 	Pfx = lists:sublist(DigitsIn, 1, MatchPfxLen),
@@ -252,12 +262,11 @@ isup_party_replace_prefix(PartyNum, MatchPfx, NewPfxInt) ->
 		io:format("Prefix rewrite: NO MATCH (~p != ~p)~n", [Pfx, MatchPfx]),
 		DigitsOut = DigitsIn
 	end,
-	IntOut = osmo_util:digit_list2int(DigitsOut),
-	PartyNum#party_number{phone_number = IntOut}.
+	PartyNum#party_number{phone_number = DigitsOut}.
 
-isup_party_internationalize(PartyNum, CountryCode) ->
-	#party_number{phone_number = IntIn, nature_of_addr_ind = Nature} = PartyNum,
-	DigitsIn = osmo_util:int2digit_list(IntIn),
+isup_party_internationalize(PartyNum, CountryCodeInt) ->
+	#party_number{phone_number = DigitsIn, nature_of_addr_ind = Nature} = PartyNum,
+	CountryCode = osmo_util:int2digit_list(CountryCodeInt),
 	case Nature of
 		?ISUP_ADDR_NAT_NATIONAL ->
 			DigitsOut = CountryCode ++ DigitsIn,
@@ -267,12 +276,11 @@ isup_party_internationalize(PartyNum, CountryCode) ->
 			DigitsOut = DigitsIn,
 			NatureOut = Nature
 	end,
-	IntOut = osmo_util:digit_list2int(DigitsOut),
-	PartyNum#party_number{phone_number = IntOut, nature_of_addr_ind = NatureOut}.
+	PartyNum#party_number{phone_number = DigitsOut, nature_of_addr_ind = NatureOut}.
 
-isup_party_nationalize(PartyNum, CountryCode) ->
-	#party_number{phone_number = IntIn, nature_of_addr_ind = Nature} = PartyNum,
-	DigitsIn = osmo_util:int2digit_list(IntIn),
+isup_party_nationalize(PartyNum, CountryCodeInt) ->
+	#party_number{phone_number = DigitsIn, nature_of_addr_ind = Nature} = PartyNum,
+	CountryCode = osmo_util:int2digit_list(CountryCodeInt),
 	CountryCodeLen = length(CountryCode),
 	case Nature of
 		?ISUP_ADDR_NAT_INTERNATIONAL ->
@@ -290,5 +298,4 @@ isup_party_nationalize(PartyNum, CountryCode) ->
 			DigitsOut = DigitsIn,
 			NatureOut = Nature
 	end,
-	IntOut = osmo_util:digit_list2int(DigitsOut),
-	PartyNum#party_number{phone_number = IntOut, nature_of_addr_ind = NatureOut}.
+	PartyNum#party_number{phone_number = DigitsOut, nature_of_addr_ind = NatureOut}.
