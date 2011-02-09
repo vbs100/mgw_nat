@@ -4,7 +4,7 @@
 	 {modules, [mgw_nat_app, mgw_nat_sup, mgw_nat_usr, mgw_nat, sccp_masq]},
 	 {registered, [mgw_nat_app]},
 	 {mod, {mgw_nat_app, []}},
-	 {applications, [osmo_ss7]},
+	 {applications, []},
 	 {env, [
 		% SCCP static rewrite rules
 		{sccp_rewrite_tbl, [
