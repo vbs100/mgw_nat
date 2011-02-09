@@ -1,7 +1,7 @@
 % MAP masquerading application
 
-% (C) 2010 by Harald Welte <laforge@gnumonks.org>
-% (C) 2010 by On-Waves
+% (C) 2010-2011 by Harald Welte <laforge@gnumonks.org>
+% (C) 2010-2011 by On-Waves
 %
 % All Rights Reserved
 %
@@ -32,7 +32,7 @@
 -define(PATCH_VMSC_ADDRESS, [4]).
 -define(PATCH_GSMSCF_ADDRESS, [5]).
 
--include("MAP.hrl").
+-include_lib("osmo_map/include/map.hrl").
 
 % patch a UpdateGprsLocationArg and replace SGSN number and SGSN address
 % !!! TESTING ONLY !!!
