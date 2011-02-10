@@ -253,9 +253,10 @@ mangle_isup_number(from_msc, _, _, PartyNum) ->
 	PartyNum.
 
 % replace the prefix of PartyNum with NewPfx _if_ the current prefix matches MatchPfx
-isup_party_replace_prefix(PartyNum, MatchPfx, NewPfxInt) ->
+isup_party_replace_prefix(PartyNum, MatchPfxInt, NewPfxInt) ->
 	DigitsIn = PartyNum#party_number.phone_number,
 	NewPfx = osmo_util:int2digit_list(NewPfxInt),
+	MatchPfx = osmo_util:int2digit_list(MatchPfxInt),
 	MatchPfxLen = length(MatchPfx),
 	Pfx = lists:sublist(DigitsIn, 1, MatchPfxLen),
 	if Pfx == MatchPfx ->
