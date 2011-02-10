@@ -420,9 +420,9 @@ mangle_map(From, {Type, TcapMsgDec}) ->
 % Configuration file has changed, re-generate internal data structures
 config_update() ->
 	% (re-)generate the MAP Address rewrite table
-	{ok, MapRewriteTbl} = application:get_env(map_rewrite_table),
+	{ok, MapRewriteTbl} = application:get_env(mgw_nat, map_rewrite_table),
 	MapRewriteTblOut = generate_rewrite_table(MapRewriteTbl),
-	application:set_env(map_rewrite_table, MapRewriteTblOut),
+	application:set_env(mgw_nat, map_rewrite_table, MapRewriteTblOut),
 	%{ok, MsrnPfxStp} = application:get_env(msrn_pfx_stp),
 	%{ok, MsrnPfxMsc} = application:get_env(msrn_pfx_msc),
 	%{ok, IntPfx} = application:get_env(intern_pfx),
