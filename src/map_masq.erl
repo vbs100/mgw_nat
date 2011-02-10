@@ -77,13 +77,23 @@ mangle_msisdn(from_stp, _Opcode, AddrIn) ->
 	mgw_nat:party_number_internationalize(AddrIn, IntPfx).
 
 % Someobdy inquires on Routing Info for a MS (from HLR)
-patch(#'SendRoutingInfoArg'{msisdn = Msisdn} = P) ->
+patch(#'SendRoutingInfoArg'{msisdn = Msisdn,'gmsc-OrGsmSCF-Address'=GmscAddr} = P) ->
+	% First Translate the MSISDN into international
 	AddrInDec = map_codec:parse_addr_string(Msisdn),
 	io:format("MSISDN IN = ~p~n", [AddrInDec]),
 	AddrOutDec = mangle_msisdn(from_stp, 22, AddrInDec),
 	io:format("MSISDN OUT = ~p~n", [AddrOutDec]),
 	AddrOutBin = map_codec:encode_addr_string(AddrOutDec),
-	P#'SendRoutingInfoArg'{msisdn = AddrOutBin};
+	% Second, try to masquerade the G-MSC
+	GmscInDec = map_codec:parse_addr_string(GmscAddr),
+	case sccp_masq:lookup_masq_addr(orig, GmscInDec#party_number.phone_number) of
+		undef ->
+			GmscOut = GmscAddr;
+		GmscOutDigits ->
+			GmscOutDec = GmscInDec#party_number{phone_number = GmscOutDigits},
+			GmscOut = map_codec:encode_addr_string(GmscOutDec)
+	end,
+	P#'SendRoutingInfoArg'{msisdn = AddrOutBin, 'gmsc-OrGsmSCF-Address' = GmscOut};
 
 % HLR responds with Routing Info for a MS
 patch(#'SendRoutingInfoRes'{extendedRoutingInfo = ExtRoutInfo,
