@@ -23,7 +23,7 @@
 -export([mangle_rx_data/3]).
 
 % exports belwo needed by map_masq.erl
--export([isup_party_internationalize/2, isup_party_nationalize/2]).
+-export([isup_party_internationalize/2, isup_party_nationalize/2, isup_party_replace_prefix/3]).
 
 %-include_lib("kernel/include/inet.hrl").
 %-include_lib("kernel/include/inet_sctp.hrl").

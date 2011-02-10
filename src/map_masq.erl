@@ -59,6 +59,17 @@ patch({camelRoutingInfo, CRI}) ->
 patch({routingInfo, RI}) ->
 	{routingInfo, patch(RI)};
 
+% patch the roaming number as it is sent from HLR to G-MSC (SRI Resp)
+patch({roamingNumber, RoamNumTBCD}) ->
+	RoamNumIn = map_codec:parse_addr_string(RoamNumTBCD),
+	io:format("Roaming Number IN = ~p~n", [RoamNumIn]),
+	{ok, MsrnPfxStp} = application:get_env(msrn_pfx_stp),
+	{ok, MsrnPfxMsc} = application:get_env(msrn_pfx_msc),
+	RoamNumOut = mgw_nat:isup_party_replace(RoamNumIn, MsrnPfxMsc, MsrnPfxStp),
+	io:format("Roaming Number OUT = ~p~n", [RoamNumOut]),
+	RoamNumOutTBCD = map_codec:encode_addr_string(RoamNumOut),
+	{roamingNumber, RoamNumOutTBCD};
+
 
 % patch a UpdateGprsLocationArg and replace SGSN number and SGSN address
 % !!! TESTING ONLY !!!
