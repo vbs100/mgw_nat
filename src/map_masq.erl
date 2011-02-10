@@ -38,6 +38,7 @@ mangle_msisdn(from_stp, _Opcode, AddrIn) ->
 	{ok, IntPfx} = application:get_env(intern_pfx),
 	mgw_nat:isup_party_internationalize(AddrIn, IntPfx).
 
+% Someobdy inquires on Routing Info for a MS (from HLR)
 patch(#'SendRoutingInfoArg'{msisdn = Msisdn} = P) ->
 	AddrInDec = map_codec:parse_addr_string(Msisdn),
 	io:format("MSISDN IN = ~p~n", [AddrInDec]),
@@ -45,6 +46,19 @@ patch(#'SendRoutingInfoArg'{msisdn = Msisdn} = P) ->
 	io:format("MSISDN OUT = ~p~n", [AddrOutDec]),
 	AddrOutBin = map_codec:encode_addr_string(AddrOutDec),
 	P#'SendRoutingInfoArg'{msisdn = AddrOutBin};
+
+% HLR responds with Routing Info for a MS
+patch(#'SendRoutingInfoRes'{extendedRoutingInfo = ExtRoutInfo,
+			    'vmsc-Address' = VmscAddress} = P) ->
+	P#'SendRoutingInfoRes'{extendedRoutingInfo = patch(ExtRoutInfo),
+			       'vmsc-Address' = ?PATCH_VMSC_ADDRESS};
+patch(#'CamelRoutingInfo'{gmscCamelSubscriptionInfo = GmscCamelSI} = P) ->
+	P#'CamelRoutingInfo'{gmscCamelSubscriptionInfo = patch(GmscCamelSI)};
+patch({camelRoutingInfo, CRI}) ->
+	{camelRoutingInfo, patch(CRI)};
+patch({routingInfo, RI}) ->
+	{routingInfo, patch(RI)};
+
 
 % patch a UpdateGprsLocationArg and replace SGSN number and SGSN address
 % !!! TESTING ONLY !!!
@@ -80,6 +94,13 @@ patch(asn1_NOVALUE) ->
 	asn1_NOVALUE;
 
 % CAMEL related parsing
+
+% this is part of the SRI Response (HLR->GMSC)
+patch(#'GmscCamelSubscriptionInfo'{'o-CSI'=Ocsi, 't-CSI'=Tcsi,
+				   'd-csi'=Dcsi} = P) ->
+	P#'GmscCamelSubscriptionInfo'{'o-CSI'=patch(Ocsi),
+				      't-CSI'=patch(Tcsi),
+				      'd-csi'=patch(Dcsi)};
 
 % this is part of the InsertSubscriberData HLR -> VLR
 patch(#'VlrCamelSubscriptionInfo'{'o-CSI'=Ocsi, 'mo-sms-CSI'=MoSmsCsi,
