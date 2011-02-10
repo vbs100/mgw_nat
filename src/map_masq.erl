@@ -263,6 +263,25 @@ handle_tcap_components_acc([Component|Tail], NewComponents) ->
 	handle_tcap_components_acc(Tail, [NewComponent|NewComponents]).
 	
 
+% Erlang asn1rt has this strange property that all incoming EXTERNAL types are
+% converted from the 1990 version into the 1994 version.  The latter does not
+% preserve the encoding (octet string, single ASN1 type, ...).  During encoding,
+% it then uses the OCTTET-STRING encoding, which is different from the MAP
+% customary single-ASN1-type format.
+asn1_EXTERNAL1994_fixup({'EXTERNAL', DirRef, IndRef, Data}) when is_list(Data),is_binary(Data) ->
+	% our trick is as follows: we simply convert back to 1990 format, and explicitly
+	% set the single-ASN1-type encoding.  asn1rt:s 'enc_EXTERNAL'() will detect this
+	#'EXTERNAL'{'direct-reference' = DirRef, 'indirect-reference' = IndRef,
+		    'encoding' = {'single-ASN1-type', Data}};
+asn1_EXTERNAL1994_fixup(Foo) ->
+	Foo.
+
+
+handle_tcap_dialogue(Foo = {'EXTERNAL', DirRef, IndRef, Data}) ->
+	asn1_EXTERNAL1994_fixup(Foo);
+handle_tcap_dialogue(Foo) ->
+	Foo.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Actual mangling of the decoded MAP messages 
@@ -271,14 +290,16 @@ mangle_map({Type, TcapMsgDec}) ->
 	case {Type, TcapMsgDec} of
 	{'unidirectional', #'MapSpecificPDUs_unidirectional'{dialoguePortion=Dialg,
 							     components=Components}} ->
+		NewDialg = handle_tcap_dialogue(Dialg),
 		NewComponents = handle_tcap_components(Components),
-		NewTcapMsgDec = TcapMsgDec#'MapSpecificPDUs_unidirectional'{components=NewComponents};
+		NewTcapMsgDec = TcapMsgDec#'MapSpecificPDUs_unidirectional'{dialoguePortion=NewDialg, components=NewComponents};
 	{'begin', #'MapSpecificPDUs_begin'{components=Components}} ->
 		NewComponents = handle_tcap_components(Components),
 		NewTcapMsgDec = TcapMsgDec#'MapSpecificPDUs_begin'{components=NewComponents};
 	{'continue', #'MapSpecificPDUs_continue'{dialoguePortion=Dialg, components=Components}} ->
+		NewDialg = handle_tcap_dialogue(Dialg),
 		NewComponents = handle_tcap_components(Components),
-		NewTcapMsgDec = TcapMsgDec#'MapSpecificPDUs_continue'{components=NewComponents};
+		NewTcapMsgDec = TcapMsgDec#'MapSpecificPDUs_continue'{dialoguePortion=NewDialg, components=NewComponents};
 	{'end', #'MapSpecificPDUs_end'{components=Components}} ->
 		NewComponents = handle_tcap_components(Components),
 		NewTcapMsgDec = TcapMsgDec#'MapSpecificPDUs_end'{components=NewComponents};
