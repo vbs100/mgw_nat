@@ -293,19 +293,22 @@ mangle_map({Type, TcapMsgDec}) ->
 		NewDialg = handle_tcap_dialogue(Dialg),
 		NewComponents = handle_tcap_components(Components),
 		NewTcapMsgDec = TcapMsgDec#'MapSpecificPDUs_unidirectional'{dialoguePortion=NewDialg, components=NewComponents};
-	{'begin', #'MapSpecificPDUs_begin'{components=Components}} ->
+	{'begin', #'MapSpecificPDUs_begin'{dialoguePortion=Dialg, components=Components}} ->
+		NewDialg = handle_tcap_dialogue(Dialg),
 		NewComponents = handle_tcap_components(Components),
-		NewTcapMsgDec = TcapMsgDec#'MapSpecificPDUs_begin'{components=NewComponents};
+		NewTcapMsgDec = TcapMsgDec#'MapSpecificPDUs_begin'{dialoguePortion=NewDialg, components=NewComponents};
 	{'continue', #'MapSpecificPDUs_continue'{dialoguePortion=Dialg, components=Components}} ->
 		NewDialg = handle_tcap_dialogue(Dialg),
 		NewComponents = handle_tcap_components(Components),
 		NewTcapMsgDec = TcapMsgDec#'MapSpecificPDUs_continue'{dialoguePortion=NewDialg, components=NewComponents};
-	{'end', #'MapSpecificPDUs_end'{components=Components}} ->
+	{'end', #'MapSpecificPDUs_end'{dialoguePortion=Dialg, components=Components}} ->
+		NewDialg = handle_tcap_dialogue(Dialg),
 		NewComponents = handle_tcap_components(Components),
-		NewTcapMsgDec = TcapMsgDec#'MapSpecificPDUs_end'{components=NewComponents};
+		NewTcapMsgDec = TcapMsgDec#'MapSpecificPDUs_end'{dialoguePortion=NewDialg, components=NewComponents};
+	%{_, #'Abort'{reason=Reason} ->
 	_ ->
 		NewTcapMsgDec = TcapMsgDec
 	end,
-	io:format("new TcapMsgDec ~p~n", [NewTcapMsgDec]),
+	io:format("new TcapMsgDec (Type=~p) ~p~n", [Type, NewTcapMsgDec]),
 	{Type, NewTcapMsgDec}.
 
