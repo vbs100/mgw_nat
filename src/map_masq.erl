@@ -41,7 +41,7 @@ patch_map_isdn_addr(AddrIn, Type) when is_list(AddrIn) ->
 	% Decode the list of octets into an party_number
 	AddrInDec = map_codec:parse_addr_string(AddrIn),
 	% First we always internationalize the address
-	AddrInIntl = mgw_nat:party_number_internationalize(AddrInDec, IntPfx),
+	AddrInIntl = mgw_nat:isup_party_internationalize(AddrInDec, IntPfx),
 	% And then patch/replace the address digits
 	DigitsIn = AddrInIntl#party_number.phone_number,
 	DigitsOut = patch_map_isdn_digits(DigitsIn, Type, Tbl),
@@ -74,7 +74,7 @@ patch_map_isdn_digits(AddrIn, TypeIn, [Head|Tail]) ->
 
 mangle_msisdn(from_stp, _Opcode, AddrIn) ->
 	{ok, IntPfx} = application:get_env(intern_pfx),
-	mgw_nat:party_number_internationalize(AddrIn, IntPfx).
+	mgw_nat:isup_party_internationalize(AddrIn, IntPfx).
 
 % Someobdy inquires on Routing Info for a MS (from HLR)
 patch(#'SendRoutingInfoArg'{msisdn = Msisdn,'gmsc-OrGsmSCF-Address'=GmscAddr} = P) ->
@@ -121,7 +121,7 @@ patch({roamingNumber, RoamNumTBCD}) ->
 	io:format("Roaming Number IN = ~p~n", [RoamNumIn]),
 	{ok, MsrnPfxStp} = application:get_env(msrn_pfx_stp),
 	{ok, MsrnPfxMsc} = application:get_env(msrn_pfx_msc),
-	RoamNumOut = mgw_nat:party_number_replace_prefix(RoamNumIn, MsrnPfxMsc, MsrnPfxStp),
+	RoamNumOut = mgw_nat:isup_party_replace_prefix(RoamNumIn, MsrnPfxMsc, MsrnPfxStp),
 	io:format("Roaming Number OUT = ~p~n", [RoamNumOut]),
 	RoamNumOutTBCD = map_codec:encode_addr_string(RoamNumOut),
 	{roamingNumber, RoamNumOutTBCD};
