@@ -268,7 +268,7 @@ handle_tcap_components_acc([Component|Tail], NewComponents) ->
 % preserve the encoding (octet string, single ASN1 type, ...).  During encoding,
 % it then uses the OCTTET-STRING encoding, which is different from the MAP
 % customary single-ASN1-type format.
-asn1_EXTERNAL1994_fixup({'EXTERNAL', DirRef, IndRef, Data}) when is_list(Data),is_binary(Data) ->
+asn1_EXTERNAL1994_fixup({'EXTERNAL', DirRef, IndRef, Data}) when is_list(Data);is_binary(Data) ->
 	% our trick is as follows: we simply convert back to 1990 format, and explicitly
 	% set the single-ASN1-type encoding.  asn1rt:s 'enc_EXTERNAL'() will detect this
 	#'EXTERNAL'{'direct-reference' = DirRef, 'indirect-reference' = IndRef,
