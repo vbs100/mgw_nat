@@ -112,8 +112,10 @@ do_sccp_gt_rewrite(GT, _From, []) ->
 	GT;
 do_sccp_gt_rewrite(GT = #global_title{phone_number = PhoneNum}, from_stp, [Head|List]) ->
 	{MscSide, StpSide, Comment} = Head,
-	if PhoneNum == StpSide ->
-		NewPhoneNum = MscSide,
+	StpSideList = osmo_util:int2digit_list(StpSide),
+	MscSideList = osmo_util:int2digit_list(MscSide),
+	if PhoneNum == StpSideList ->
+		NewPhoneNum = MscSideList,
 		io:format("SCCP STP->MSC rewrite (~p) ~p -> ~p~n",
 			  [Comment, PhoneNum, NewPhoneNum]),
 		GT#global_title{phone_number = NewPhoneNum};
@@ -122,8 +124,10 @@ do_sccp_gt_rewrite(GT = #global_title{phone_number = PhoneNum}, from_stp, [Head|
 	end;
 do_sccp_gt_rewrite(GT = #global_title{phone_number = PhoneNum}, from_msc, [Head|List]) ->
 	{MscSide, StpSide, Comment} = Head,
-	if PhoneNum == MscSide ->
-		NewPhoneNum = StpSide,
+	StpSideList = osmo_util:int2digit_list(StpSide),
+	MscSideList = osmo_util:int2digit_list(MscSide),
+	if PhoneNum == MscSideList ->
+		NewPhoneNum = StpSideList,
 		io:format("SCCP MSC->STP rewrite (~p) ~p -> ~p~n",
 			  [Comment, PhoneNum, NewPhoneNum]),
 		GT#global_title{phone_number = NewPhoneNum};
