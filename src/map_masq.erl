@@ -151,7 +151,9 @@ patch(#'SMS-CAMEL-TDP-Data'{'gsmSCF-Address'=GsmScfAddr} = P) ->
 patch(#'GPRS-CamelTDPData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
 	P#'GPRS-CamelTDPData'{'gsmSCF-Address'=?PATCH_GSMSCF_ADDRESS};
 patch(#'DP-AnalysedInfoCriterium'{'gsmSCF-Address'=GsmScfAddr} = P) ->
-	P#'DP-AnalysedInfoCriterium'{'gsmSCF-Address'=?PATCH_GSMSCF_ADDRESS}.
+	P#'DP-AnalysedInfoCriterium'{'gsmSCF-Address'=?PATCH_GSMSCF_ADDRESS};
+patch(Default) ->
+	Default.
 
 patch_oBcsmCamelTDPDataList(List) ->
 	% we reverse the origianl list, as the tail recursive _acc function
