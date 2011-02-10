@@ -235,21 +235,21 @@ patch_SmsCamelTDPDataList_acc([TdpData|Tail], NewList) ->
 
 
 % process the Argument of a particular MAP invocation
-process_component_arg(OpCode, Arg) ->
+process_component_arg(_From, OpCode, Arg) ->
 	case Arg of
 		asn1_NOVALUE -> Arg;
 		_ -> patch(Arg)
 	end.
 
 % recurse over all components
-handle_tcap_components(asn1_NOVALUE) ->
+handle_tcap_components(_From, asn1_NOVALUE) ->
 	asn1_NOVALUE;
-handle_tcap_components(List) ->
+handle_tcap_components(From, List) ->
 	% we reverse the origianl list, as the tail recursive _acc function
 	% will invert the order of components again
-	handle_tcap_components_acc(lists:reverse(List), []).
-handle_tcap_components_acc([], NewComponents) -> NewComponents;
-handle_tcap_components_acc([Component|Tail], NewComponents) ->
+	handle_tcap_components_acc(From, lists:reverse(List), []).
+handle_tcap_components_acc(_From, [], NewComponents) -> NewComponents;
+handle_tcap_components_acc(From, [Component|Tail], NewComponents) ->
 	case Component of
 		{basicROS, {Primitive, Body}} ->
 			io:format("handle component ~p primitive ~n", [Component]),
@@ -257,35 +257,35 @@ handle_tcap_components_acc([Component|Tail], NewComponents) ->
 				% BEGIN
 				#'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke'{opcode={local, OpCode},
 											  argument=Arg} ->
-					NewArg = process_component_arg(OpCode, Arg),
+					NewArg = process_component_arg(From, OpCode, Arg),
 					NewBody = Body#'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke'{argument=NewArg};
 				#'MapSpecificPDUs_begin_components_SEQOF_basicROS_returnResult'{result=#'MapSpecificPDUs_begin_components_SEQOF_basicROS_returnResult_result'{opcode={local, OpCode}, result=Arg} = R} ->
-					NewArg = process_component_arg(OpCode, Arg),
+					NewArg = process_component_arg(From, OpCode, Arg),
 					NewBody = Body#'MapSpecificPDUs_begin_components_SEQOF_basicROS_returnResult'{result=R#'MapSpecificPDUs_begin_components_SEQOF_basicROS_returnResult_result'{result=NewArg}};
 				#'MapSpecificPDUs_begin_components_SEQOF_returnResultNotLast'{result=#'MapSpecificPDUs_begin_components_SEQOF_returnResultNotLast_result'{opcode={local, OpCode}, result=Arg} = R} ->
-					NewArg = process_component_arg(OpCode, Arg),
+					NewArg = process_component_arg(From, OpCode, Arg),
 					NewBody = Body#'MapSpecificPDUs_begin_components_SEQOF_returnResultNotLast'{result=R#'MapSpecificPDUs_begin_components_SEQOF_returnResultNotLast_result'{result=NewArg}};
 				% END
 				#'MapSpecificPDUs_end_components_SEQOF_basicROS_invoke'{opcode={local, OpCode},
 											argument=Arg} ->
-					NewArg = process_component_arg(OpCode, Arg),
+					NewArg = process_component_arg(From, OpCode, Arg),
 					NewBody = Body#'MapSpecificPDUs_end_components_SEQOF_basicROS_invoke'{argument=NewArg};
 				#'MapSpecificPDUs_end_components_SEQOF_basicROS_returnResult'{result=#'MapSpecificPDUs_end_components_SEQOF_basicROS_returnResult_result'{opcode={local, OpCode}, result=Arg} = R} ->
-					NewArg = process_component_arg(OpCode, Arg),
+					NewArg = process_component_arg(From, OpCode, Arg),
 					NewBody = Body#'MapSpecificPDUs_end_components_SEQOF_basicROS_returnResult'{result=R#'MapSpecificPDUs_end_components_SEQOF_basicROS_returnResult_result'{result=NewArg}};
 				#'MapSpecificPDUs_end_components_SEQOF_returnResultNotLast'{result=#'MapSpecificPDUs_end_components_SEQOF_returnResultNotLast_result'{opcode={local, OpCode}, result=Arg} = R} ->
-					NewArg = process_component_arg(OpCode, Arg),
+					NewArg = process_component_arg(From, OpCode, Arg),
 					NewBody = Body#'MapSpecificPDUs_end_components_SEQOF_returnResultNotLast'{result=R#'MapSpecificPDUs_end_components_SEQOF_returnResultNotLast_result'{result=NewArg}};
 				% CONTINUE
 				#'MapSpecificPDUs_continue_components_SEQOF_basicROS_invoke'{opcode={local, OpCode},
 											     argument=Arg} ->
-					NewArg = process_component_arg(OpCode, Arg),
+					NewArg = process_component_arg(From, OpCode, Arg),
 					NewBody = Body#'MapSpecificPDUs_continue_components_SEQOF_basicROS_invoke'{argument=NewArg};
 				#'MapSpecificPDUs_continue_components_SEQOF_basicROS_returnResult'{result=#'MapSpecificPDUs_continue_components_SEQOF_basicROS_returnResult_result'{opcode={local, OpCode}, result=Arg} = R} ->
-					NewArg = process_component_arg(OpCode, Arg),
+					NewArg = process_component_arg(From, OpCode, Arg),
 					NewBody = Body#'MapSpecificPDUs_end_components_SEQOF_basicROS_returnResult'{result=R#'MapSpecificPDUs_end_components_SEQOF_basicROS_returnResult_result'{result=NewArg}};
 				#'MapSpecificPDUs_continue_components_SEQOF_returnResultNotLast'{result=#'MapSpecificPDUs_continue_components_SEQOF_returnResultNotLast_result'{opcode={local, OpCode}, result=Arg} = R} ->
-					NewArg = process_component_arg(OpCode, Arg),
+					NewArg = process_component_arg(From, OpCode, Arg),
 					NewBody = Body#'MapSpecificPDUs_continue_components_SEQOF_returnResultNotLast'{result=R#'MapSpecificPDUs_continue_components_SEQOF_returnResultNotLast_result'{result=NewArg}};
 				_ ->
 					NewBody = Body
@@ -296,7 +296,7 @@ handle_tcap_components_acc([Component|Tail], NewComponents) ->
 			NewComponent = Component
 	end,
 	io:format("=> modified component ~p~n", [NewComponent]),
-	handle_tcap_components_acc(Tail, [NewComponent|NewComponents]).
+	handle_tcap_components_acc(From, Tail, [NewComponent|NewComponents]).
 	
 
 % Erlang asn1rt has this strange property that all incoming EXTERNAL types are
@@ -313,33 +313,33 @@ asn1_EXTERNAL1994_fixup(Foo) ->
 	Foo.
 
 
-handle_tcap_dialogue(Foo = {'EXTERNAL', DirRef, IndRef, Data}) ->
+handle_tcap_dialogue(_From, Foo = {'EXTERNAL', DirRef, IndRef, Data}) ->
 	asn1_EXTERNAL1994_fixup(Foo);
-handle_tcap_dialogue(Foo) ->
+handle_tcap_dialogue(_From, Foo) ->
 	Foo.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Actual mangling of the decoded MAP messages 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-mangle_map(_From, {Type, TcapMsgDec}) ->
+mangle_map(From, {Type, TcapMsgDec}) ->
 	case {Type, TcapMsgDec} of
 	{'unidirectional', #'MapSpecificPDUs_unidirectional'{dialoguePortion=Dialg,
 							     components=Components}} ->
-		NewDialg = handle_tcap_dialogue(Dialg),
-		NewComponents = handle_tcap_components(Components),
+		NewDialg = handle_tcap_dialogue(From, Dialg),
+		NewComponents = handle_tcap_components(From, Components),
 		NewTcapMsgDec = TcapMsgDec#'MapSpecificPDUs_unidirectional'{dialoguePortion=NewDialg, components=NewComponents};
 	{'begin', #'MapSpecificPDUs_begin'{dialoguePortion=Dialg, components=Components}} ->
-		NewDialg = handle_tcap_dialogue(Dialg),
-		NewComponents = handle_tcap_components(Components),
+		NewDialg = handle_tcap_dialogue(From, Dialg),
+		NewComponents = handle_tcap_components(From, Components),
 		NewTcapMsgDec = TcapMsgDec#'MapSpecificPDUs_begin'{dialoguePortion=NewDialg, components=NewComponents};
 	{'continue', #'MapSpecificPDUs_continue'{dialoguePortion=Dialg, components=Components}} ->
-		NewDialg = handle_tcap_dialogue(Dialg),
-		NewComponents = handle_tcap_components(Components),
+		NewDialg = handle_tcap_dialogue(From, Dialg),
+		NewComponents = handle_tcap_components(From, Components),
 		NewTcapMsgDec = TcapMsgDec#'MapSpecificPDUs_continue'{dialoguePortion=NewDialg, components=NewComponents};
 	{'end', #'MapSpecificPDUs_end'{dialoguePortion=Dialg, components=Components}} ->
-		NewDialg = handle_tcap_dialogue(Dialg),
-		NewComponents = handle_tcap_components(Components),
+		NewDialg = handle_tcap_dialogue(From, Dialg),
+		NewComponents = handle_tcap_components(From, Components),
 		NewTcapMsgDec = TcapMsgDec#'MapSpecificPDUs_end'{dialoguePortion=NewDialg, components=NewComponents};
 	%{_, #'Abort'{reason=Reason} ->
 	_ ->
