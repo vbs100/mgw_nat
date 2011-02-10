@@ -13,4 +13,5 @@ stop(_State) ->
 	ok.
 
 reload_config() ->
-	osmo_util:reload_config().
+	osmo_util:reload_config(),
+	map_masq:config_update().

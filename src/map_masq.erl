@@ -24,19 +24,57 @@
 -author('Harald Welte <laforge@gnumonks.org>').
 %-compile(export_all).
 
--export([mangle_map/2]).
-
--define(PATCH_HLR_NUMBER, [1]).
--define(PATCH_SGSN_NUMBER, [2]).
--define(PATCH_SGSN_ADDRESS, [3]).
--define(PATCH_VMSC_ADDRESS, [4]).
--define(PATCH_GSMSCF_ADDRESS, [5]).
+-export([mangle_map/2, config_update/0]).
 
 -include_lib("osmo_map/include/map.hrl").
+-include_lib("osmo_ss7/include/isup.hrl").
+
+% Use the MAP address translation table to alter an ISDN-Address-String
+patch_map_isdn_addr(asn1_NOVALUE, _Type) ->
+	asn1_NOVALUE;
+patch_map_isdn_addr(AddrIn, Type) when is_binary(AddrIn) ->
+	patch_map_isdn_addr(binary_to_list(AddrIn), Type);
+patch_map_isdn_addr(AddrIn, Type) when is_list(AddrIn) ->
+	% obtain some configuration data
+	{ok, Tbl} = application:get_env(map_rewrite_table),
+	{ok, IntPfx} = application:get_env(intern_pfx),
+	% Decode the list of octets into an party_number
+	AddrInDec = map_codec:parse_addr_string(AddrIn),
+	% First we always internationalize the address
+	AddrInIntl = mgw_nat:party_number_internationalize(AddrInDec, IntPfx),
+	% And then patch/replace the address digits
+	DigitsIn = AddrInIntl#party_number.phone_number,
+	DigitsOut = patch_map_isdn_digits(DigitsIn, Type, Tbl),
+	AddrOutIntl = AddrInIntl#party_number{phone_number = DigitsOut},
+	if AddrOutIntl == AddrInDec ->
+		ok;
+	   true ->
+		io:format("Translating MAP-ISDN-Addess ~p ~p -> ~p~n",
+			  [Type, AddrInDec, AddrOutIntl])
+	end,
+	% Finally, encode them again into the octet list
+	AddrOutEnc = map_codec:encode_addr_string(AddrOutIntl),
+	binary_to_list(AddrOutEnc).
+
+patch_map_isdn_digits(AddrIn, _Type, []) ->
+	AddrIn;
+patch_map_isdn_digits(AddrIn, TypeIn, [Head|Tail]) ->
+	case Head of
+		{TypeIn, _,_, MscSide, StpSide} ->
+			if AddrIn == MscSide ->
+				StpSide;
+			   AddrIn == StpSide ->
+				MscSide;
+			true ->
+				patch_map_isdn_digits(AddrIn, TypeIn, Tail)
+			end;
+		_ ->
+			patch_map_isdn_digits(AddrIn, TypeIn, Tail)
+	end.
 
 mangle_msisdn(from_stp, _Opcode, AddrIn) ->
 	{ok, IntPfx} = application:get_env(intern_pfx),
-	mgw_nat:isup_party_internationalize(AddrIn, IntPfx).
+	mgw_nat:party_number_internationalize(AddrIn, IntPfx).
 
 % Someobdy inquires on Routing Info for a MS (from HLR)
 patch(#'SendRoutingInfoArg'{msisdn = Msisdn} = P) ->
@@ -50,8 +88,9 @@ patch(#'SendRoutingInfoArg'{msisdn = Msisdn} = P) ->
 % HLR responds with Routing Info for a MS
 patch(#'SendRoutingInfoRes'{extendedRoutingInfo = ExtRoutInfo,
 			    'vmsc-Address' = VmscAddress} = P) ->
+	VmscAddrOut = patch_map_isdn_addr(VmscAddress, msc),
 	P#'SendRoutingInfoRes'{extendedRoutingInfo = patch(ExtRoutInfo),
-			       'vmsc-Address' = ?PATCH_VMSC_ADDRESS};
+			       'vmsc-Address' = VmscAddrOut};
 patch(#'CamelRoutingInfo'{gmscCamelSubscriptionInfo = GmscCamelSI} = P) ->
 	P#'CamelRoutingInfo'{gmscCamelSubscriptionInfo = patch(GmscCamelSI)};
 patch({camelRoutingInfo, CRI}) ->
@@ -59,13 +98,20 @@ patch({camelRoutingInfo, CRI}) ->
 patch({routingInfo, RI}) ->
 	{routingInfo, patch(RI)};
 
+% HLR responds to inquiring MSC indicating the current serving MSC number
+patch(#'RoutingInfoForSM-Res'{locationInfoWithLMSI = LocInf} = P) ->
+	P#'RoutingInfoForSM-Res'{locationInfoWithLMSI = patch(LocInf)};
+patch(#'LocationInfoWithLMSI'{'networkNode-Number' = NetNodeNr} = P) ->
+	NetNodeNrOut = patch_map_isdn_addr(NetNodeNr, msc),
+	P#'LocationInfoWithLMSI'{'networkNode-Number' = NetNodeNrOut};
+
 % patch the roaming number as it is sent from HLR to G-MSC (SRI Resp)
 patch({roamingNumber, RoamNumTBCD}) ->
 	RoamNumIn = map_codec:parse_addr_string(RoamNumTBCD),
 	io:format("Roaming Number IN = ~p~n", [RoamNumIn]),
 	{ok, MsrnPfxStp} = application:get_env(msrn_pfx_stp),
 	{ok, MsrnPfxMsc} = application:get_env(msrn_pfx_msc),
-	RoamNumOut = mgw_nat:isup_party_replace_prefix(RoamNumIn, MsrnPfxMsc, MsrnPfxStp),
+	RoamNumOut = mgw_nat:party_number_replace_prefix(RoamNumIn, MsrnPfxMsc, MsrnPfxStp),
 	io:format("Roaming Number OUT = ~p~n", [RoamNumOut]),
 	RoamNumOutTBCD = map_codec:encode_addr_string(RoamNumOut),
 	{roamingNumber, RoamNumOutTBCD};
@@ -73,23 +119,28 @@ patch({roamingNumber, RoamNumTBCD}) ->
 
 % patch a UpdateGprsLocationArg and replace SGSN number and SGSN address
 % !!! TESTING ONLY !!!
-patch(#'UpdateGprsLocationArg'{} = P) ->
-	P#'UpdateGprsLocationArg'{'sgsn-Number'= ?PATCH_SGSN_NUMBER,
-				  'sgsn-Address' = ?PATCH_SGSN_ADDRESS};
+patch(#'UpdateGprsLocationArg'{'sgsn-Number' = SgsnNum,
+			       'sgsn-Address' = SgsnAddr} = P) ->
+	SgsnNumOut = patch_map_isdn_addr(SgsnNum, sgsn),
+	P#'UpdateGprsLocationArg'{'sgsn-Number'= SgsnNumOut,
+				  'sgsn-Address' = SgsnAddr};
 
 % Some other SGSN is sendingu us a GPRS location update.  In the response,
 % we indicate teh HLR number, which we need to masquerade
-patch(#'UpdateGprsLocationRes'{} = P) ->
-	P#'UpdateGprsLocationRes'{'hlr-Number' = ?PATCH_HLR_NUMBER};
+patch(#'UpdateGprsLocationRes'{'hlr-Number' = HlrNum} = P) ->
+	HlrNumOut = patch_map_isdn_addr(HlrNum, hlr),
+	P#'UpdateGprsLocationRes'{'hlr-Number' = HlrNumOut};
 
 % Some other MSC/VLR is sendingu us a GSM location update.  In the response,
 % we indicate teh HLR number, which we need to masquerade
-patch(#'UpdateLocationRes'{} = P) ->
-	P#'UpdateLocationRes'{'hlr-Number' = ?PATCH_HLR_NUMBER};
+patch(#'UpdateLocationRes'{'hlr-Number' = HlrNum} = P) ->
+	HlrNumOut = patch_map_isdn_addr(HlrNum, hlr),
+	P#'UpdateLocationRes'{'hlr-Number' = HlrNumOut};
 
 % HLR responds to VLR's MAP_RESTORE_REQ (i.e. it has lost information)
-patch(#'RestoreDataRes'{} = P) ->
-	P#'RestoreDataRes'{'hlr-Number' = ?PATCH_HLR_NUMBER};
+patch(#'RestoreDataRes'{'hlr-Number' = HlrNum} = P) ->
+	HlrNumOut = patch_map_isdn_addr(HlrNum, hlr),
+	P#'RestoreDataRes'{'hlr-Number' = HlrNumOut};
 
 % HLR sends subscriber data to VLR/SGSN, including CAMEL info
 patch(#'InsertSubscriberDataArg'{'vlrCamelSubscriptionInfo'=VlrCamel,
@@ -161,9 +212,11 @@ patch(#'CAMEL-SubscriptionInfo'{'o-CSI'=Ocsi,
 patch(#'T-CSI'{'t-BcsmCamelTDPDataList'=TdpList} = P) ->
 	P#'T-CSI'{'t-BcsmCamelTDPDataList'=patch_tBcsmCamelTDPDataList(TdpList)};
 patch(#'M-CSI'{'gsmSCF-Address'=GsmScfAddr} = P) ->
-	P#'M-CSI'{'gsmSCF-Address'=?PATCH_GSMSCF_ADDRESS};
+	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
+	P#'M-CSI'{'gsmSCF-Address'=GsmScfAddrOut};
 patch(#'MG-CSI'{'gsmSCF-Address'=GsmScfAddr} = P) ->
-	P#'MG-CSI'{'gsmSCF-Address'=?PATCH_GSMSCF_ADDRESS};
+	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
+	P#'MG-CSI'{'gsmSCF-Address'=GsmScfAddrOut};
 patch(#'O-CSI'{'o-BcsmCamelTDPDataList'=TdpList} = P) ->
 	P#'O-CSI'{'o-BcsmCamelTDPDataList'=patch_oBcsmCamelTDPDataList(TdpList)};
 patch(#'D-CSI'{'dp-AnalysedInfoCriteriaList'=List} = P) ->
@@ -175,15 +228,20 @@ patch(#'SS-CSI'{'ss-CamelData'=Sscd} = P) ->
 patch(#'GPRS-CSI'{'gprs-CamelTDPDataList'=TdpList} = P) ->
 	P#'GPRS-CSI'{'gprs-CamelTDPDataList'=patch_GprsCamelTDPDataList(TdpList)};
 patch(#'SS-CamelData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
-	P#'SS-CamelData'{'gsmSCF-Address'=?PATCH_GSMSCF_ADDRESS};
+	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
+	P#'SS-CamelData'{'gsmSCF-Address'=GsmScfAddrOut};
 patch(#'O-BcsmCamelTDPData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
-	P#'O-BcsmCamelTDPData'{'gsmSCF-Address'=?PATCH_GSMSCF_ADDRESS};
+	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
+	P#'O-BcsmCamelTDPData'{'gsmSCF-Address'=GsmScfAddrOut};
 patch(#'SMS-CAMEL-TDP-Data'{'gsmSCF-Address'=GsmScfAddr} = P) ->
-	P#'SMS-CAMEL-TDP-Data'{'gsmSCF-Address'=?PATCH_GSMSCF_ADDRESS};
+	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
+	P#'SMS-CAMEL-TDP-Data'{'gsmSCF-Address'=GsmScfAddrOut};
 patch(#'GPRS-CamelTDPData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
-	P#'GPRS-CamelTDPData'{'gsmSCF-Address'=?PATCH_GSMSCF_ADDRESS};
+	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
+	P#'GPRS-CamelTDPData'{'gsmSCF-Address'=GsmScfAddrOut};
 patch(#'DP-AnalysedInfoCriterium'{'gsmSCF-Address'=GsmScfAddr} = P) ->
-	P#'DP-AnalysedInfoCriterium'{'gsmSCF-Address'=?PATCH_GSMSCF_ADDRESS};
+	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
+	P#'DP-AnalysedInfoCriterium'{'gsmSCF-Address'=GsmScfAddrOut};
 patch(Default) ->
 	Default.
 
@@ -348,3 +406,30 @@ mangle_map(From, {Type, TcapMsgDec}) ->
 	io:format("new TcapMsgDec (Type=~p) ~p~n", [Type, NewTcapMsgDec]),
 	{Type, NewTcapMsgDec}.
 
+
+% Configuration file has changed, re-generate internal data structures
+config_update() ->
+	% (re-)generate the MAP Address rewrite table
+	{ok, MapRewriteTbl} = application:get_env(map_rewrite_table),
+	MapRewriteTblOut = generate_rewrite_table(MapRewriteTbl),
+	application:set_env(map_rewrite_table, MapRewriteTblOut),
+	%{ok, MsrnPfxStp} = application:get_env(msrn_pfx_stp),
+	%{ok, MsrnPfxMsc} = application:get_env(msrn_pfx_msc),
+	%{ok, IntPfx} = application:get_env(intern_pfx),
+	ok.
+
+% Generate the full MAP address rewrite table
+generate_rewrite_table(List) when is_list(List) ->
+	generate_rewrite_table(List, []).
+generate_rewrite_table([], OutList) ->
+	io:format("(Re)generated MAP ISDN-Address rewrite table: ~p~n", [OutList]),
+	OutList;
+generate_rewrite_table([Head|Tail], OutList) ->
+	NewItem = generate_rewrite_entry(Head),
+	generate_rewrite_table(Tail, [NewItem|OutList]).
+
+% Generate a MAP Address rewrite table entry
+generate_rewrite_entry({Name, MscSideInt, StpSideInt}) ->
+	MscSideList = osmo_util:int2digit_list(MscSideInt),
+	StpSideList = osmo_util:int2digit_list(StpSideInt),
+	{Name, MscSideInt, StpSideInt, MscSideList, StpSideList}.

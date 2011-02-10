@@ -41,6 +41,7 @@ sccp_masq_reset() ->
 
 init(Params) ->
 	sccp_masq:init(),
+	map_masq:config_update(),
 	apply(sctp_handler, init, Params).
 
 handle_cast(stop, LoopData) ->
