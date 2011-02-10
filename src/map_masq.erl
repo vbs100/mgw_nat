@@ -52,9 +52,7 @@ patch_map_isdn_addr(AddrIn, Type) when is_list(AddrIn) ->
 		io:format("Translating MAP-ISDN-Addess ~p ~p -> ~p~n",
 			  [Type, AddrInDec, AddrOutIntl])
 	end,
-	% Finally, encode them again into the octet list
-	AddrOutEnc = map_codec:encode_addr_string(AddrOutIntl),
-	binary_to_list(AddrOutEnc).
+	map_codec:encode_addr_string(AddrOutIntl).
 
 patch_map_isdn_digits(AddrIn, _Type, []) ->
 	AddrIn;
