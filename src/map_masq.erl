@@ -24,7 +24,7 @@
 -author('Harald Welte <laforge@gnumonks.org>').
 %-compile(export_all).
 
--export([mangle_map/1]).
+-export([mangle_map/2]).
 
 -define(PATCH_HLR_NUMBER, [1]).
 -define(PATCH_SGSN_NUMBER, [2]).
@@ -322,7 +322,7 @@ handle_tcap_dialogue(Foo) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Actual mangling of the decoded MAP messages 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-mangle_map({Type, TcapMsgDec}) ->
+mangle_map(_From, {Type, TcapMsgDec}) ->
 	case {Type, TcapMsgDec} of
 	{'unidirectional', #'MapSpecificPDUs_unidirectional'{dialoguePortion=Dialg,
 							     components=Components}} ->

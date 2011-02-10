@@ -164,7 +164,7 @@ mangle_rx_sccp(From, ?SCCP_MSGT_UDT, Msg = #sccp_msg{parameters = Opts}) ->
 	% Mangle the actual MAP payload inside the UDT data portion
 	UserData = proplists:get_value(user_data, Opts),
 	MapDec = map_codec:parse_tcap_msg(UserData),
-	MapDecNew = map_masq:mangle_map(MapDec),
+	MapDecNew = map_masq:mangle_map(From, MapDec),
 	MapEncNew = map_codec:encode_tcap_msg(MapDecNew),
 	Opts3 = lists:keyreplace(user_data, 1, Opts2,
 				 {user_data, MapEncNew}),
