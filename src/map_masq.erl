@@ -65,7 +65,7 @@ patch({roamingNumber, RoamNumTBCD}) ->
 	io:format("Roaming Number IN = ~p~n", [RoamNumIn]),
 	{ok, MsrnPfxStp} = application:get_env(msrn_pfx_stp),
 	{ok, MsrnPfxMsc} = application:get_env(msrn_pfx_msc),
-	RoamNumOut = mgw_nat:isup_party_replace(RoamNumIn, MsrnPfxMsc, MsrnPfxStp),
+	RoamNumOut = mgw_nat:isup_party_replace_prefix(RoamNumIn, MsrnPfxMsc, MsrnPfxStp),
 	io:format("Roaming Number OUT = ~p~n", [RoamNumOut]),
 	RoamNumOutTBCD = map_codec:encode_addr_string(RoamNumOut),
 	{roamingNumber, RoamNumOutTBCD};
@@ -242,6 +242,8 @@ process_component_arg(OpCode, Arg) ->
 	end.
 
 % recurse over all components
+handle_tcap_components(asn1_NOVALUE) ->
+	asn1_NOVALUE;
 handle_tcap_components(List) ->
 	% we reverse the origianl list, as the tail recursive _acc function
 	% will invert the order of components again
