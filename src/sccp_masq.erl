@@ -21,7 +21,7 @@
 -author('Harald Welte <laforge@gnumonks.org>').
 -include_lib("osmo_ss7/include/sccp.hrl").
 
--export([sccp_masq_msg/3, init/0, reset/0]).
+-export([sccp_masq_msg/3, init/0, reset/0, lookup_masq_addr/2]).
 
 -compile([export_all]).
 
@@ -60,8 +60,8 @@ lookup_masq_addr(orig, GtDigits) ->
 		[#sccp_masq_rec{digits_out = DigitsOut}] ->
 			DigitsOut;
 		_ ->
-			% allocate a new masq GT
-			masq_alloc(GtDigits)
+			% we do not allocate entries right here
+			undef
 	end;
 lookup_masq_addr(rev, GtDigits) ->
 	case ets:lookup(get(sccp_masq_rev), GtDigits) of
@@ -72,11 +72,19 @@ lookup_masq_addr(rev, GtDigits) ->
 			undef
 	end.
 
+lookup_or_alloc_masq_addr(Dir, GtDigits) ->
+	case lookup_masq_addr(Dir, GtDigits) of
+		undef ->
+			% allocate a new masq GT
+			masq_alloc(GtDigits);
+		Addr ->
+			Addr
+	end.
 
 % Masquerade the CALLING address in first STP(G-MSC) -> HLR/VLR/MSC dir
 mangle_rx_calling(from_stp, Addr = #sccp_addr{global_title = GT}) ->
 	GtOrig = GT#global_title.phone_number,
-	GtReplace = lookup_masq_addr(orig, GtOrig),
+	GtReplace = lookup_or_alloc_masq_addr(orig, GtOrig),
 	case GtReplace of
 		undef ->
 			io:format("SCCP MASQ: Unable to rewrite in original direction (out of GT addrs?)~n"),
