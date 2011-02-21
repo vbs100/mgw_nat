@@ -95,9 +95,11 @@ patch(#'SendRoutingInfoArg'{msisdn = Msisdn,'gmsc-OrGsmSCF-Address'=GmscAddr} = 
 
 % HLR responds with Routing Info for a MS
 patch(#'SendRoutingInfoRes'{extendedRoutingInfo = ExtRoutInfo,
+			    subscriberInfo = SubscriberInfo,
 			    'vmsc-Address' = VmscAddress} = P) ->
 	VmscAddrOut = patch_map_isdn_addr(VmscAddress, msc),
 	P#'SendRoutingInfoRes'{extendedRoutingInfo = patch(ExtRoutInfo),
+			       'subscriberInfo' = patch(SubscriberInfo),
 			       'vmsc-Address' = VmscAddrOut};
 patch(#'CamelRoutingInfo'{gmscCamelSubscriptionInfo = GmscCamelSI} = P) ->
 	P#'CamelRoutingInfo'{gmscCamelSubscriptionInfo = patch(GmscCamelSI)};
@@ -253,6 +255,12 @@ patch(#'GPRS-CamelTDPData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
 patch(#'DP-AnalysedInfoCriterium'{'gsmSCF-Address'=GsmScfAddr} = P) ->
 	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
 	P#'DP-AnalysedInfoCriterium'{'gsmSCF-Address'=GsmScfAddrOut};
+patch(#'SubscriberInfo'{'locationInformation'=LocInformation} = P) ->
+	P#'SubscriberInfo'{'locationInformation'=patch(LocInformation)};
+patch(#'LocationInformation'{'vlr-number'=VlrNumber} = P) ->
+	VlrNumberOut = patch_map_isdn_addr(VlrNumber, vlr),
+	P#'LocationInformation'{'vlr-number'=VlrNumberOut};
+
 patch(Default) ->
 	Default.
 
