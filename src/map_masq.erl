@@ -241,6 +241,9 @@ patch(#'SS-CamelData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
 patch(#'O-BcsmCamelTDPData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
 	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
 	P#'O-BcsmCamelTDPData'{'gsmSCF-Address'=GsmScfAddrOut};
+patch(#'T-BcsmCamelTDPData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
+	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
+	P#'T-BcsmCamelTDPData'{'gsmSCF-Address'=GsmScfAddrOut};
 patch(#'SMS-CAMEL-TDP-Data'{'gsmSCF-Address'=GsmScfAddr} = P) ->
 	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
 	P#'SMS-CAMEL-TDP-Data'{'gsmSCF-Address'=GsmScfAddrOut};
