@@ -134,6 +134,8 @@ patch(#'SS-CamelData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
 	P#'SS-CamelData'{'gsmSCF-Address'=?PATCH_GSMSCF_ADDRESS};
 patch(#'O-BcsmCamelTDPData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
 	P#'O-BcsmCamelTDPData'{'gsmSCF-Address'=?PATCH_GSMSCF_ADDRESS};
+patch(#'T-BcsmCamelTDPData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
+	P#'T-BcsmCamelTDPData'{'gsmSCF-Address'=?PATCH_GSMSCF_ADDRESS};
 patch(#'SMS-CAMEL-TDP-Data'{'gsmSCF-Address'=GsmScfAddr} = P) ->
 	P#'SMS-CAMEL-TDP-Data'{'gsmSCF-Address'=?PATCH_GSMSCF_ADDRESS};
 patch(#'GPRS-CamelTDPData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
