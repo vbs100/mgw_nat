@@ -260,8 +260,18 @@ patch(#'SubscriberInfo'{'locationInformation'=LocInformation} = P) ->
 patch(#'LocationInformation'{'vlr-number'=VlrNumber} = P) ->
 	VlrNumberOut = patch_map_isdn_addr(VlrNumber, vlr),
 	P#'LocationInformation'{'vlr-number'=VlrNumberOut};
+patch(#'MO-ForwardSM-Arg'{'sm-RP-DA'=SC} = P) ->
+	NewSC = patch_scaddr(SC),
+	P#'MO-ForwardSM-Arg'{'sm-RP-DA'=NewSC};
 
 patch(Default) ->
+	Default.
+
+%rewrite the serviceCentreAddressDA
+patch_scaddr({serviceCentreAddressDA,Ar}) ->
+	NewAddr = patch_map_isdn_addr(Ar, smsCDA),
+	{serviceCentreAddressDA,NewAddr};
+patch_scaddr(Default) ->
 	Default.
 
 patch_oBcsmCamelTDPDataList(List) ->
