@@ -151,6 +151,11 @@ mangle_rx_calling(from_msc, Addr = #sccp_addr{global_title = GT}) ->
 mangle_rx_calling(_From, Addr) ->
 	Addr.
 
+maybe_re_encode(DecOrig, DecNew, MapEncOld) when DecOrig == DecNew ->
+	MapEncOld;
+maybe_re_encode(_DecOrig, DecNew, _MapEncOld) ->
+	map_codec:encode_tcap_msg(DecNew).
+
 mangle_rx_sccp(From, ?SCCP_MSGT_UDT, Msg = #sccp_msg{parameters = Opts}) ->
 	% Mangle the SCCP Calling / Called Addresses
 	CalledParty = proplists:get_value(called_party_addr, Opts),
@@ -165,7 +170,7 @@ mangle_rx_sccp(From, ?SCCP_MSGT_UDT, Msg = #sccp_msg{parameters = Opts}) ->
 	UserData = proplists:get_value(user_data, Opts),
 	MapDec = map_codec:parse_tcap_msg(UserData),
 	MapDecNew = map_masq:mangle_map(From, MapDec),
-	MapEncNew = map_codec:encode_tcap_msg(MapDecNew),
+	MapEncNew = maybe_re_encode(MapDec, MapDecNew, UserData),
 	Opts3 = lists:keyreplace(user_data, 1, Opts2,
 				 {user_data, MapEncNew}),
 	Msg#sccp_msg{parameters = Opts3};
