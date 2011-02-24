@@ -41,16 +41,18 @@ masq_try_alloc(_DigitsOrig, _Base, Max, Offset) when Offset > Max ->
 masq_try_alloc(DigitsOrig, Base, Max, Offset) ->
 	Try = Base + Offset,
 	TryBin = osmo_util:int2digit_list(Try),
-	EtsRet = ets:insert_new(get(sccp_masq_orig),
-				#sccp_masq_rec{digits_in = DigitsOrig,
-					       digits_out = TryBin}),
+	% try to first allocate the reverse mapping, i.e. where the new
+	% masqueraded address is the unique criteria for table lookup
+	EtsRet = ets:insert_new(get(sccp_masq_rev),
+				#sccp_masq_rec{digits_in = TryBin,
+					       digits_out = DigitsOrig}),
 	case EtsRet of
 		false ->
 			masq_try_alloc(DigitsOrig, Base, Max, Offset+1);
 		_ ->
-			ets:insert(get(sccp_masq_rev),
-				   #sccp_masq_rec{digits_in = TryBin,
-						  digits_out = DigitsOrig}),
+			ets:insert(get(sccp_masq_orig),
+				   #sccp_masq_rec{digits_in = DigitsOrig,
+						  digits_out = TryBin}),
 			Try
 	end.
 
