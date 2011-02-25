@@ -471,6 +471,9 @@ generate_rewrite_table([Head|Tail], OutList) ->
 	NewItem = generate_rewrite_entry(Head),
 	generate_rewrite_table(Tail, [NewItem|OutList]).
 
+% If a rewrite table entry is already fully-qualified, return it unmodified
+generate_rewrite_entry({Name, MscInt, StpInt, Msc, Stp}) ->
+	{Name, MscInt, StpInt, Msc, Stp};
 % Generate a MAP Address rewrite table entry
 generate_rewrite_entry({Name, MscSideInt, StpSideInt}) ->
 	MscSideList = osmo_util:int2digit_list(MscSideInt),
