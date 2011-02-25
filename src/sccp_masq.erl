@@ -21,7 +21,7 @@
 -author('Harald Welte <laforge@gnumonks.org>').
 -include_lib("osmo_ss7/include/sccp.hrl").
 
--export([sccp_masq_msg/3, init/0, reset/0, lookup_masq_addr/2]).
+-export([sccp_masq_msg/3, init/0, reset/0, dump/0, lookup_masq_addr/2]).
 
 -compile([export_all]).
 
@@ -141,3 +141,19 @@ reset() ->
 	io:format("SCCP MASQ: Deleting all MASQ state records~n"),
 	ets:delete_all_objects(get(sccp_masq_orig)),
 	ets:delete_all_objects(get(sccp_masq_rev)).
+
+dump() ->
+	ListOrig = ets:tab2list(get(sccp_masq_orig)),
+	ListRev = ets:tab2list(get(sccp_masq_rev)),
+	io:format("SCCP MASQ Table Dump (ORIGINAL)~n"),
+	dump_list(ListOrig),
+	io:format("SCCP MASQ Table Dump (REVERSE)~n"),
+	dump_list(ListRev).
+
+dump_list([]) ->
+	ok;
+dump_list([#sccp_masq_rec{digits_in=DigIn, digits_out=DigOut}|Tail]) ->
+	DigInInt = osmo_util:digit_list2int(DigIn),
+	DigOutInt = osmo_util:digit_list2int(DigOut),
+	io:format("~p -> ~p~n", [DigInInt, DigOutInt]),
+	dump_list(Tail).
