@@ -1,0 +1,93 @@
+= Installing mgw_nat =
+
+... is currently not _that_ simple, I'm working on it.
+
+== Installation procedure (rebar) =
+
+=== checking out mgw_nat ===
+
+{{{
+cd ~/osmo-erlang/
+git clone git://git.osmocom.org/erlang/mgw_nat
+}}}
+
+=== getting + patching rebar ===
+
+{{{
+cd ~/osmo-erlang
+hg clone https://bitbucket.org/basho/rebar
+patch -p1 < ~/osmo-erlang/mgw_nat/rebar-asn1_set.diff
+cd rebar
+./bootstrap
+cp rebar /usr/local/bin/
+}}}
+
+=== building mgw_nat and its dependencies ===
+
+{{{
+cd ~/osmo-erlang/mgw_nat
+rebar get-deps
+rebar compile
+}}}
+some error will occur regarding src/tcap_map_patch.erl due to missing map.hrl file
+{{{
+mv deps/osmo_map/src/map.hrl deps/osmo_map/include/
+rebar compile
+}}}
+
+== Installation procedure (manual) ==
+
+=== Dependencies ===
+
+let's assume we create a new base directory directory {{{~/osmo-erlang}}} for all
+the Osmocom related Erlang code.
+
+As such, we need to set the {{{ERL_LIBS}}} variable to include this directory, e.g.
+by using {{{export ERL_LIBS=~/osmo-erlang/}}} in the shell.
+
+==== osmo_ss7 ====
+
+{{{
+cd ~/osmo-erlang/
+git clone git://git.osmocom.org/erlang/osmo_ss7
+cd osmo_ss7
+erl -make
+}}}
+
+
+==== osmo_map ====
+
+{{{
+cd ~/osmo-erlang/
+git clone git://git.osmocom.org/erlang/osmo_map
+cd osmo_map
+erl -make
+}}}
+
+=== mgw_nat ===
+
+{{{
+cd ~/osmo-erlang/
+git clone git://git.osmocom.org/erlang/mgw_nat
+cd mgw_nat
+erl -make
+}}}
+
+== Configuration file ==
+
+You have to write the config file using the standard Erlang OTP application
+configuration file syntax and store it in e.g. {{{~/osmo-erlang/local.cfg}}}
+
+== Starting the VM / Application ==
+
+* Make sure ERL_LIBS is set (see above)
+{{{
+cd ~/osmo-erlang/
+erl -config ./local.cfg
+}}}
+
+Inside the VM, you can then type
+{{{
+application:start(mgw_nat).
+}}}
+in order to start the application.

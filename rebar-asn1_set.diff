@@ -1,0 +1,21 @@
+diff -r d4fcc10abc0b src/rebar_asn1_compiler.erl
+--- a/src/rebar_asn1_compiler.erl	Wed Dec 15 17:40:12 2010 +0100
++++ b/src/rebar_asn1_compiler.erl	Fri Feb 25 16:03:42 2011 +0100
+@@ -38,8 +38,8 @@
+ 
+ -spec compile(Config::#config{}, AppFile::string()) -> 'ok'.
+ compile(Config, _AppFile) ->
+-    rebar_base_compiler:run(Config, filelib:wildcard("asn1/*.asn1"),
+-                            "asn1", ".asn1", "src", ".erl",
++    rebar_base_compiler:run(Config, filelib:wildcard("asn1/*.set.asn1"),
++                            "asn1", ".set.asn1", "src", ".erl",
+                             fun compile_asn1/3).
+ 
+ -spec clean(Config::#config{}, AppFile::string()) -> 'ok'.
+@@ -65,5 +65,5 @@
+                 filelib:wildcard(filename:join([SrcDir, Base ++ ".*"])) ++ Acc
+         end,
+         [],
+-        filelib:wildcard(filename:join([AsnDir, "*.asn1"]))
++        filelib:wildcard(filename:join([AsnDir, "*.set.asn1"]))
+        ).
