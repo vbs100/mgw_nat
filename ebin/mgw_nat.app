@@ -1,7 +1,7 @@
 {application, mgw_nat,
 	[{description, "Media Gateway NAT"},
 	 {vsn, "1"},
-	 {modules, [mgw_nat_app, mgw_nat_sup, mgw_nat_usr, mgw_nat, sccp_masq]},
+	 {modules, [mgw_nat_app, mgw_nat_sup, mgw_nat_usr, mgw_nat, sccp_masq, map_masq]},
 	 {registered, [mgw_nat_app]},
 	 {mod, {mgw_nat_app, []}},
 	 {applications, []},
