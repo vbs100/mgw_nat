@@ -93,6 +93,20 @@ patch(From = from_stp, #'SendRoutingInfoArg'{msisdn = Msisdn,'gmsc-OrGsmSCF-Addr
 	end,
 	P#'SendRoutingInfoArg'{msisdn = AddrOutBin, 'gmsc-OrGsmSCF-Address' = GmscOut};
 
+% Someobdy inquires on Routing Info for a MS (from our HLR -> STP)
+patch(from_msc, #'SendRoutingInfoArg'{'gmsc-OrGsmSCF-Address'=GmscAddr} = P) ->
+	% try to translate the G-MSC
+	GmscInDec = map_codec:parse_addr_string(GmscAddr),
+	case sccp_masq:lookup_masq_addr(rev, GmscInDec#party_number.phone_number) of
+		undef ->
+			GmscOut = GmscAddr;
+		GmscOutDigits ->
+			GmscOutDec = GmscInDec#party_number{phone_number = GmscOutDigits},
+			GmscOut = map_codec:encode_addr_string(GmscOutDec)
+	end,
+	P#'SendRoutingInfoArg'{'gmsc-OrGsmSCF-Address' = GmscOut};
+
+
 % HLR responds with Routing Info for a MS
 patch(From, #'SendRoutingInfoRes'{extendedRoutingInfo = ExtRoutInfo,
 			    subscriberInfo = SubscriberInfo,
