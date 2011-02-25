@@ -30,11 +30,11 @@
 -include_lib("osmo_ss7/include/isup.hrl").
 
 % Use the MAP address translation table to alter an ISDN-Address-String
-patch_map_isdn_addr(asn1_NOVALUE, _Type) ->
+patch_map_isdn_addr(_From, asn1_NOVALUE, _Type) ->
 	asn1_NOVALUE;
-patch_map_isdn_addr(AddrIn, Type) when is_binary(AddrIn) ->
-	patch_map_isdn_addr(binary_to_list(AddrIn), Type);
-patch_map_isdn_addr(AddrIn, Type) when is_list(AddrIn) ->
+patch_map_isdn_addr(From, AddrIn, Type) when is_binary(AddrIn) ->
+	patch_map_isdn_addr(From, binary_to_list(AddrIn), Type);
+patch_map_isdn_addr(From, AddrIn, Type) when is_list(AddrIn) ->
 	% obtain some configuration data
 	{ok, Tbl} = application:get_env(map_rewrite_table),
 	{ok, IntPfx} = application:get_env(intern_pfx),
@@ -44,7 +44,7 @@ patch_map_isdn_addr(AddrIn, Type) when is_list(AddrIn) ->
 	AddrInIntl = mgw_nat:isup_party_internationalize(AddrInDec, IntPfx),
 	% And then patch/replace the address digits
 	DigitsIn = AddrInIntl#party_number.phone_number,
-	DigitsOut = patch_map_isdn_digits(DigitsIn, Type, Tbl),
+	DigitsOut = patch_map_isdn_digits(From, DigitsIn, Type, Tbl),
 	AddrOutIntl = AddrInIntl#party_number{phone_number = DigitsOut},
 	if AddrOutIntl == AddrInDec ->
 		ok;
@@ -54,9 +54,9 @@ patch_map_isdn_addr(AddrIn, Type) when is_list(AddrIn) ->
 	end,
 	map_codec:encode_addr_string(AddrOutIntl).
 
-patch_map_isdn_digits(AddrIn, _Type, []) ->
+patch_map_isdn_digits(_From, AddrIn, _Type, []) ->
 	AddrIn;
-patch_map_isdn_digits(AddrIn, TypeIn, [Head|Tail]) ->
+patch_map_isdn_digits(From, AddrIn, TypeIn, [Head|Tail]) ->
 	case Head of
 		{TypeIn, _,_, MscSide, StpSide} ->
 			if AddrIn == MscSide ->
@@ -64,10 +64,10 @@ patch_map_isdn_digits(AddrIn, TypeIn, [Head|Tail]) ->
 			   AddrIn == StpSide ->
 				MscSide;
 			true ->
-				patch_map_isdn_digits(AddrIn, TypeIn, Tail)
+				patch_map_isdn_digits(From, AddrIn, TypeIn, Tail)
 			end;
 		_ ->
-			patch_map_isdn_digits(AddrIn, TypeIn, Tail)
+			patch_map_isdn_digits(From, AddrIn, TypeIn, Tail)
 	end.
 
 mangle_msisdn(from_stp, _Opcode, AddrIn) ->
@@ -75,11 +75,11 @@ mangle_msisdn(from_stp, _Opcode, AddrIn) ->
 	mgw_nat:isup_party_internationalize(AddrIn, IntPfx).
 
 % Someobdy inquires on Routing Info for a MS (from HLR)
-patch(#'SendRoutingInfoArg'{msisdn = Msisdn,'gmsc-OrGsmSCF-Address'=GmscAddr} = P) ->
+patch(From = from_stp, #'SendRoutingInfoArg'{msisdn = Msisdn,'gmsc-OrGsmSCF-Address'=GmscAddr} = P) ->
 	% First Translate the MSISDN into international
 	AddrInDec = map_codec:parse_addr_string(Msisdn),
 	io:format("MSISDN IN = ~p~n", [AddrInDec]),
-	AddrOutDec = mangle_msisdn(from_stp, 22, AddrInDec),
+	AddrOutDec = mangle_msisdn(From, 22, AddrInDec),
 	io:format("MSISDN OUT = ~p~n", [AddrOutDec]),
 	AddrOutBin = map_codec:encode_addr_string(AddrOutDec),
 	% Second, try to masquerade the G-MSC
@@ -94,29 +94,29 @@ patch(#'SendRoutingInfoArg'{msisdn = Msisdn,'gmsc-OrGsmSCF-Address'=GmscAddr} = 
 	P#'SendRoutingInfoArg'{msisdn = AddrOutBin, 'gmsc-OrGsmSCF-Address' = GmscOut};
 
 % HLR responds with Routing Info for a MS
-patch(#'SendRoutingInfoRes'{extendedRoutingInfo = ExtRoutInfo,
+patch(From, #'SendRoutingInfoRes'{extendedRoutingInfo = ExtRoutInfo,
 			    subscriberInfo = SubscriberInfo,
 			    'vmsc-Address' = VmscAddress} = P) ->
-	VmscAddrOut = patch_map_isdn_addr(VmscAddress, msc),
-	P#'SendRoutingInfoRes'{extendedRoutingInfo = patch(ExtRoutInfo),
-			       'subscriberInfo' = patch(SubscriberInfo),
+	VmscAddrOut = patch_map_isdn_addr(From, VmscAddress, msc),
+	P#'SendRoutingInfoRes'{extendedRoutingInfo = patch(From, ExtRoutInfo),
+			       'subscriberInfo' = patch(From, SubscriberInfo),
 			       'vmsc-Address' = VmscAddrOut};
-patch(#'CamelRoutingInfo'{gmscCamelSubscriptionInfo = GmscCamelSI} = P) ->
-	P#'CamelRoutingInfo'{gmscCamelSubscriptionInfo = patch(GmscCamelSI)};
-patch({camelRoutingInfo, CRI}) ->
-	{camelRoutingInfo, patch(CRI)};
-patch({routingInfo, RI}) ->
-	{routingInfo, patch(RI)};
+patch(From, #'CamelRoutingInfo'{gmscCamelSubscriptionInfo = GmscCamelSI} = P) ->
+	P#'CamelRoutingInfo'{gmscCamelSubscriptionInfo = patch(From, GmscCamelSI)};
+patch(From, {camelRoutingInfo, CRI}) ->
+	{camelRoutingInfo, patch(From, CRI)};
+patch(From, {routingInfo, RI}) ->
+	{routingInfo, patch(From, RI)};
 
 % HLR responds to inquiring MSC indicating the current serving MSC number
-patch(#'RoutingInfoForSM-Res'{locationInfoWithLMSI = LocInf} = P) ->
-	P#'RoutingInfoForSM-Res'{locationInfoWithLMSI = patch(LocInf)};
-patch(#'LocationInfoWithLMSI'{'networkNode-Number' = NetNodeNr} = P) ->
-	NetNodeNrOut = patch_map_isdn_addr(NetNodeNr, msc),
+patch(From, #'RoutingInfoForSM-Res'{locationInfoWithLMSI = LocInf} = P) ->
+	P#'RoutingInfoForSM-Res'{locationInfoWithLMSI = patch(From, LocInf)};
+patch(From, #'LocationInfoWithLMSI'{'networkNode-Number' = NetNodeNr} = P) ->
+	NetNodeNrOut = patch_map_isdn_addr(From, NetNodeNr, msc),
 	P#'LocationInfoWithLMSI'{'networkNode-Number' = NetNodeNrOut};
 
 % patch the roaming number as it is sent from HLR to G-MSC (SRI Resp)
-patch({roamingNumber, RoamNumTBCD}) ->
+patch(_From, {roamingNumber, RoamNumTBCD}) ->
 	RoamNumIn = map_codec:parse_addr_string(RoamNumTBCD),
 	io:format("Roaming Number IN = ~p~n", [RoamNumIn]),
 	{ok, MsrnPfxStp} = application:get_env(msrn_pfx_stp),
@@ -129,69 +129,69 @@ patch({roamingNumber, RoamNumTBCD}) ->
 
 % patch a UpdateGprsLocationArg and replace SGSN number and SGSN address
 % !!! TESTING ONLY !!!
-patch(#'UpdateGprsLocationArg'{'sgsn-Number' = SgsnNum,
+patch(From, #'UpdateGprsLocationArg'{'sgsn-Number' = SgsnNum,
 			       'sgsn-Address' = SgsnAddr} = P) ->
-	SgsnNumOut = patch_map_isdn_addr(SgsnNum, sgsn),
+	SgsnNumOut = patch_map_isdn_addr(From, SgsnNum, sgsn),
 	P#'UpdateGprsLocationArg'{'sgsn-Number'= SgsnNumOut,
 				  'sgsn-Address' = SgsnAddr};
 
 % Some other SGSN is sendingu us a GPRS location update.  In the response,
 % we indicate teh HLR number, which we need to masquerade
-patch(#'UpdateGprsLocationRes'{'hlr-Number' = HlrNum} = P) ->
-	HlrNumOut = patch_map_isdn_addr(HlrNum, hlr),
+patch(From, #'UpdateGprsLocationRes'{'hlr-Number' = HlrNum} = P) ->
+	HlrNumOut = patch_map_isdn_addr(From, HlrNum, hlr),
 	P#'UpdateGprsLocationRes'{'hlr-Number' = HlrNumOut};
 
 % Some other MSC/VLR is sendingu us a GSM location update.  In the response,
 % we indicate teh HLR number, which we need to masquerade
-patch(#'UpdateLocationRes'{'hlr-Number' = HlrNum} = P) ->
-	HlrNumOut = patch_map_isdn_addr(HlrNum, hlr),
+patch(From, #'UpdateLocationRes'{'hlr-Number' = HlrNum} = P) ->
+	HlrNumOut = patch_map_isdn_addr(From, HlrNum, hlr),
 	P#'UpdateLocationRes'{'hlr-Number' = HlrNumOut};
 
 % HLR responds to VLR's MAP_RESTORE_REQ (i.e. it has lost information)
-patch(#'RestoreDataRes'{'hlr-Number' = HlrNum} = P) ->
-	HlrNumOut = patch_map_isdn_addr(HlrNum, hlr),
+patch(From, #'RestoreDataRes'{'hlr-Number' = HlrNum} = P) ->
+	HlrNumOut = patch_map_isdn_addr(From, HlrNum, hlr),
 	P#'RestoreDataRes'{'hlr-Number' = HlrNumOut};
 
 % HLR sends subscriber data to VLR/SGSN, including CAMEL info
-patch(#'InsertSubscriberDataArg'{'vlrCamelSubscriptionInfo'=VlrCamel,
+patch(From, #'InsertSubscriberDataArg'{'vlrCamelSubscriptionInfo'=VlrCamel,
 				 'sgsn-CAMEL-SubscriptionInfo'=SgsnCamel} = Arg) ->
-	Arg#'InsertSubscriberDataArg'{'vlrCamelSubscriptionInfo'=patch(VlrCamel),
-				      'sgsn-CAMEL-SubscriptionInfo'=patch(SgsnCamel)};
+	Arg#'InsertSubscriberDataArg'{'vlrCamelSubscriptionInfo'=patch(From, VlrCamel),
+				      'sgsn-CAMEL-SubscriptionInfo'=patch(From, SgsnCamel)};
 
 % HLR sends subscriber data to gsmSCF
-patch(#'AnyTimeSubscriptionInterrogationRes'{'camel-SubscriptionInfo'=Csi} = P) ->
-	P#'AnyTimeSubscriptionInterrogationRes'{'camel-SubscriptionInfo'=patch(Csi)};
+patch(From, #'AnyTimeSubscriptionInterrogationRes'{'camel-SubscriptionInfo'=Csi} = P) ->
+	P#'AnyTimeSubscriptionInterrogationRes'{'camel-SubscriptionInfo'=patch(From, Csi)};
 
-patch(asn1_NOVALUE) ->
+patch(From, asn1_NOVALUE) ->
 	asn1_NOVALUE;
 
 % CAMEL related parsing
 
 % this is part of the SRI Response (HLR->GMSC)
-patch(#'GmscCamelSubscriptionInfo'{'o-CSI'=Ocsi, 't-CSI'=Tcsi,
+patch(From, #'GmscCamelSubscriptionInfo'{'o-CSI'=Ocsi, 't-CSI'=Tcsi,
 				   'd-csi'=Dcsi} = P) ->
-	P#'GmscCamelSubscriptionInfo'{'o-CSI'=patch(Ocsi),
-				      't-CSI'=patch(Tcsi),
-				      'd-csi'=patch(Dcsi)};
+	P#'GmscCamelSubscriptionInfo'{'o-CSI'=patch(From, Ocsi),
+				      't-CSI'=patch(From, Tcsi),
+				      'd-csi'=patch(From, Dcsi)};
 
 % this is part of the InsertSubscriberData HLR -> VLR
-patch(#'VlrCamelSubscriptionInfo'{'o-CSI'=Ocsi, 'mo-sms-CSI'=MoSmsCsi,
+patch(From, #'VlrCamelSubscriptionInfo'{'o-CSI'=Ocsi, 'mo-sms-CSI'=MoSmsCsi,
 				  'mt-sms-CSI'=MtSmsCsi, 'ss-CSI'=SsCsi} = P) ->
-	P#'VlrCamelSubscriptionInfo'{'o-CSI'=patch(Ocsi),
-				    'mo-sms-CSI'=patch(MoSmsCsi),
-				    'mt-sms-CSI'=patch(MtSmsCsi),
-				    'ss-CSI'=patch(SsCsi)};
+	P#'VlrCamelSubscriptionInfo'{'o-CSI'=patch(From, Ocsi),
+				    'mo-sms-CSI'=patch(From, MoSmsCsi),
+				    'mt-sms-CSI'=patch(From, MtSmsCsi),
+				    'ss-CSI'=patch(From, SsCsi)};
 
 % this is part of the InsertSubscriberData HLR -> SGSN
-patch(#'SGSN-CAMEL-SubscriptionInfo'{'gprs-CSI'=GprsCsi,
+patch(From, #'SGSN-CAMEL-SubscriptionInfo'{'gprs-CSI'=GprsCsi,
 				     'mo-sms-CSI'=MoSmsCsi,
 				     'mt-sms-CSI'=MtSmsCsi} = P) ->
-	P#'SGSN-CAMEL-SubscriptionInfo'{'gprs-CSI'=patch(GprsCsi),
-					'mo-sms-CSI'=patch(MoSmsCsi),
-					'mt-sms-CSI'=patch(MtSmsCsi)};
+	P#'SGSN-CAMEL-SubscriptionInfo'{'gprs-CSI'=patch(From, GprsCsi),
+					'mo-sms-CSI'=patch(From, MoSmsCsi),
+					'mt-sms-CSI'=patch(From, MtSmsCsi)};
 
 % this is part of the Anytime Subscription Interrogation Result HLR->gsmSCF
-patch(#'CAMEL-SubscriptionInfo'{'o-CSI'=Ocsi,
+patch(From, #'CAMEL-SubscriptionInfo'{'o-CSI'=Ocsi,
 				'd-CSI'=Dcsi,
 				't-CSI'=Tcsi,
 				'vt-CSI'=Vtcsi,
@@ -205,127 +205,127 @@ patch(#'CAMEL-SubscriptionInfo'{'o-CSI'=Ocsi,
 				'o-IM-CSI'=OimCsi,
 				'd-IM-CSI'=DimCsi,
 				'vt-IM-CSI'=VtImCsi} = P) ->
-	P#'CAMEL-SubscriptionInfo'{'o-CSI'=patch(Ocsi),
-				'd-CSI'=patch(Dcsi),
-				't-CSI'=patch(Tcsi),
-				'vt-CSI'=patch(Vtcsi),
-				'gprs-CSI'=patch(GprsCsi),
-				'mo-sms-CSI'=patch(MoSmsCsi),
-				'ss-CSI'=patch(SsCsi),
-				'm-CSI'=patch(Mcsi),
-				'mt-sms-CSI'=patch(MtSmsCsi),
-				'mg-csi'=patch(MgCsi),
-				'o-IM-CSI'=patch(OimCsi),
-				'd-IM-CSI'=patch(DimCsi),
-				'vt-IM-CSI'=patch(VtImCsi)};
+	P#'CAMEL-SubscriptionInfo'{'o-CSI'=patch(From, Ocsi),
+				'd-CSI'=patch(From, Dcsi),
+				't-CSI'=patch(From, Tcsi),
+				'vt-CSI'=patch(From, Vtcsi),
+				'gprs-CSI'=patch(From, GprsCsi),
+				'mo-sms-CSI'=patch(From, MoSmsCsi),
+				'ss-CSI'=patch(From, SsCsi),
+				'm-CSI'=patch(From, Mcsi),
+				'mt-sms-CSI'=patch(From, MtSmsCsi),
+				'mg-csi'=patch(From, MgCsi),
+				'o-IM-CSI'=patch(From, OimCsi),
+				'd-IM-CSI'=patch(From, DimCsi),
+				'vt-IM-CSI'=patch(From, VtImCsi)};
 
-patch(#'T-CSI'{'t-BcsmCamelTDPDataList'=TdpList} = P) ->
-	P#'T-CSI'{'t-BcsmCamelTDPDataList'=patch_tBcsmCamelTDPDataList(TdpList)};
-patch(#'M-CSI'{'gsmSCF-Address'=GsmScfAddr} = P) ->
-	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
+patch(From, #'T-CSI'{'t-BcsmCamelTDPDataList'=TdpList} = P) ->
+	P#'T-CSI'{'t-BcsmCamelTDPDataList'=patch_tBcsmCamelTDPDataList(From, TdpList)};
+patch(From, #'M-CSI'{'gsmSCF-Address'=GsmScfAddr} = P) ->
+	GsmScfAddrOut = patch_map_isdn_addr(From, GsmScfAddr, scf),
 	P#'M-CSI'{'gsmSCF-Address'=GsmScfAddrOut};
-patch(#'MG-CSI'{'gsmSCF-Address'=GsmScfAddr} = P) ->
-	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
+patch(From, #'MG-CSI'{'gsmSCF-Address'=GsmScfAddr} = P) ->
+	GsmScfAddrOut = patch_map_isdn_addr(From, GsmScfAddr, scf),
 	P#'MG-CSI'{'gsmSCF-Address'=GsmScfAddrOut};
-patch(#'O-CSI'{'o-BcsmCamelTDPDataList'=TdpList} = P) ->
-	P#'O-CSI'{'o-BcsmCamelTDPDataList'=patch_oBcsmCamelTDPDataList(TdpList)};
-patch(#'D-CSI'{'dp-AnalysedInfoCriteriaList'=List} = P) ->
-	P#'D-CSI'{'dp-AnalysedInfoCriteriaList'=patch_AnInfoCritList(List)};
-patch(#'SMS-CSI'{'sms-CAMEL-TDP-DataList'=TdpList} = P) ->
-	P#'SMS-CSI'{'sms-CAMEL-TDP-DataList'=patch_SmsCamelTDPDataList(TdpList)};
-patch(#'SS-CSI'{'ss-CamelData'=Sscd} = P) ->
-	P#'SS-CSI'{'ss-CamelData'=patch(Sscd)};
-patch(#'GPRS-CSI'{'gprs-CamelTDPDataList'=TdpList} = P) ->
-	P#'GPRS-CSI'{'gprs-CamelTDPDataList'=patch_GprsCamelTDPDataList(TdpList)};
-patch(#'SS-CamelData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
-	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
+patch(From, #'O-CSI'{'o-BcsmCamelTDPDataList'=TdpList} = P) ->
+	P#'O-CSI'{'o-BcsmCamelTDPDataList'=patch_oBcsmCamelTDPDataList(From, TdpList)};
+patch(From, #'D-CSI'{'dp-AnalysedInfoCriteriaList'=List} = P) ->
+	P#'D-CSI'{'dp-AnalysedInfoCriteriaList'=patch_AnInfoCritList(From, List)};
+patch(From, #'SMS-CSI'{'sms-CAMEL-TDP-DataList'=TdpList} = P) ->
+	P#'SMS-CSI'{'sms-CAMEL-TDP-DataList'=patch_SmsCamelTDPDataList(From, TdpList)};
+patch(From, #'SS-CSI'{'ss-CamelData'=Sscd} = P) ->
+	P#'SS-CSI'{'ss-CamelData'=patch(From, Sscd)};
+patch(From, #'GPRS-CSI'{'gprs-CamelTDPDataList'=TdpList} = P) ->
+	P#'GPRS-CSI'{'gprs-CamelTDPDataList'=patch_GprsCamelTDPDataList(From, TdpList)};
+patch(From, #'SS-CamelData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
+	GsmScfAddrOut = patch_map_isdn_addr(From, GsmScfAddr, scf),
 	P#'SS-CamelData'{'gsmSCF-Address'=GsmScfAddrOut};
-patch(#'O-BcsmCamelTDPData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
-	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
+patch(From, #'O-BcsmCamelTDPData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
+	GsmScfAddrOut = patch_map_isdn_addr(From, GsmScfAddr, scf),
 	P#'O-BcsmCamelTDPData'{'gsmSCF-Address'=GsmScfAddrOut};
-patch(#'T-BcsmCamelTDPData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
-	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
+patch(From, #'T-BcsmCamelTDPData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
+	GsmScfAddrOut = patch_map_isdn_addr(From, GsmScfAddr, scf),
 	P#'T-BcsmCamelTDPData'{'gsmSCF-Address'=GsmScfAddrOut};
-patch(#'SMS-CAMEL-TDP-Data'{'gsmSCF-Address'=GsmScfAddr} = P) ->
-	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
+patch(From, #'SMS-CAMEL-TDP-Data'{'gsmSCF-Address'=GsmScfAddr} = P) ->
+	GsmScfAddrOut = patch_map_isdn_addr(From, GsmScfAddr, scf),
 	P#'SMS-CAMEL-TDP-Data'{'gsmSCF-Address'=GsmScfAddrOut};
-patch(#'GPRS-CamelTDPData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
-	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
+patch(From, #'GPRS-CamelTDPData'{'gsmSCF-Address'=GsmScfAddr} = P) ->
+	GsmScfAddrOut = patch_map_isdn_addr(From, GsmScfAddr, scf),
 	P#'GPRS-CamelTDPData'{'gsmSCF-Address'=GsmScfAddrOut};
-patch(#'DP-AnalysedInfoCriterium'{'gsmSCF-Address'=GsmScfAddr} = P) ->
-	GsmScfAddrOut = patch_map_isdn_addr(GsmScfAddr, scf),
+patch(From, #'DP-AnalysedInfoCriterium'{'gsmSCF-Address'=GsmScfAddr} = P) ->
+	GsmScfAddrOut = patch_map_isdn_addr(From, GsmScfAddr, scf),
 	P#'DP-AnalysedInfoCriterium'{'gsmSCF-Address'=GsmScfAddrOut};
-patch(#'SubscriberInfo'{'locationInformation'=LocInformation} = P) ->
-	P#'SubscriberInfo'{'locationInformation'=patch(LocInformation)};
-patch(#'LocationInformation'{'vlr-number'=VlrNumber} = P) ->
-	VlrNumberOut = patch_map_isdn_addr(VlrNumber, vlr),
+patch(From, #'SubscriberInfo'{'locationInformation'=LocInformation} = P) ->
+	P#'SubscriberInfo'{'locationInformation'=patch(From, LocInformation)};
+patch(From, #'LocationInformation'{'vlr-number'=VlrNumber} = P) ->
+	VlrNumberOut = patch_map_isdn_addr(From, VlrNumber, vlr),
 	P#'LocationInformation'{'vlr-number'=VlrNumberOut};
-patch(#'MO-ForwardSM-Arg'{'sm-RP-DA'=SC} = P) ->
-	NewSC = patch_scaddr(SC),
+patch(From, #'MO-ForwardSM-Arg'{'sm-RP-DA'=SC} = P) ->
+	NewSC = patch_scaddr(From, SC),
 	P#'MO-ForwardSM-Arg'{'sm-RP-DA'=NewSC};
 
-patch(Default) ->
+patch(_From, Default) ->
 	Default.
 
 %rewrite the serviceCentreAddressDA
-patch_scaddr({serviceCentreAddressDA,Ar}) ->
-	NewAddr = patch_map_isdn_addr(Ar, smsCDA),
+patch_scaddr(From, {serviceCentreAddressDA,Ar}) ->
+	NewAddr = patch_map_isdn_addr(From, Ar, smsCDA),
 	{serviceCentreAddressDA,NewAddr};
-patch_scaddr(Default) ->
+patch_scaddr(From, Default) ->
 	Default.
 
-patch_oBcsmCamelTDPDataList(List) ->
+patch_oBcsmCamelTDPDataList(From, List) ->
 	% we reverse the origianl list, as the tail recursive _acc function
 	% will invert the order of components again
-	patch_oBcsmCamelTDPDataList_acc(lists:reverse(List), []).
-patch_oBcsmCamelTDPDataList_acc([], NewList) -> NewList;
-patch_oBcsmCamelTDPDataList_acc([TdpData|Tail], NewList) ->
-	NewTdpData = patch(TdpData#'O-BcsmCamelTDPData'{}),
-	patch_oBcsmCamelTDPDataList_acc(Tail, [NewTdpData|NewList]).
+	patch_oBcsmCamelTDPDataList_acc(From, lists:reverse(List), []).
+patch_oBcsmCamelTDPDataList_acc(From, [], NewList) -> NewList;
+patch_oBcsmCamelTDPDataList_acc(From, [TdpData|Tail], NewList) ->
+	NewTdpData = patch(From, TdpData#'O-BcsmCamelTDPData'{}),
+	patch_oBcsmCamelTDPDataList_acc(From, Tail, [NewTdpData|NewList]).
 
-patch_tBcsmCamelTDPDataList(List) ->
+patch_tBcsmCamelTDPDataList(From, List) ->
 	% we reverse the origianl list, as the tail recursive _acc function
 	% will invert the order of components again
-	patch_tBcsmCamelTDPDataList_acc(lists:reverse(List), []).
-patch_tBcsmCamelTDPDataList_acc([], NewList) -> NewList;
-patch_tBcsmCamelTDPDataList_acc([TdpData|Tail], NewList) ->
-	NewTdpData = patch(TdpData#'T-BcsmCamelTDPData'{}),
-	patch_tBcsmCamelTDPDataList_acc(Tail, [NewTdpData|NewList]).
+	patch_tBcsmCamelTDPDataList_acc(From, lists:reverse(List), []).
+patch_tBcsmCamelTDPDataList_acc(From, [], NewList) -> NewList;
+patch_tBcsmCamelTDPDataList_acc(From, [TdpData|Tail], NewList) ->
+	NewTdpData = patch(From, TdpData#'T-BcsmCamelTDPData'{}),
+	patch_tBcsmCamelTDPDataList_acc(From, Tail, [NewTdpData|NewList]).
 
-patch_AnInfoCritList(List) ->
+patch_AnInfoCritList(From, List) ->
 	% we reverse the origianl list, as the tail recursive _acc function
 	% will invert the order of components again
-	patch_AnInfoCritList_acc(lists:reverse(List), []).
-patch_AnInfoCritList_acc([], NewList) -> NewList;
-patch_AnInfoCritList_acc([Crit|Tail], NewList) ->
-	NewCrit = patch(Crit#'DP-AnalysedInfoCriterium'{}),
-	patch_AnInfoCritList_acc(Tail, [NewCrit|NewList]).
+	patch_AnInfoCritList_acc(From, lists:reverse(List), []).
+patch_AnInfoCritList_acc(From, [], NewList) -> NewList;
+patch_AnInfoCritList_acc(From, [Crit|Tail], NewList) ->
+	NewCrit = patch(From, Crit#'DP-AnalysedInfoCriterium'{}),
+	patch_AnInfoCritList_acc(From, Tail, [NewCrit|NewList]).
 
-patch_GprsCamelTDPDataList(List) ->
+patch_GprsCamelTDPDataList(From, List) ->
 	% we reverse the origianl list, as the tail recursive _acc function
 	% will invert the order of components again
-	patch_GprsCamelTDPDataList_acc(lists:reverse(List), []).
-patch_GprsCamelTDPDataList_acc([], NewList) -> NewList;
-patch_GprsCamelTDPDataList_acc([TdpData|Tail], NewList) ->
-	NewTdpData = patch(TdpData#'GPRS-CamelTDPData'{}),
-	patch_GprsCamelTDPDataList_acc(Tail, [NewTdpData|NewList]).
+	patch_GprsCamelTDPDataList_acc(From, lists:reverse(List), []).
+patch_GprsCamelTDPDataList_acc(_From, [], NewList) -> NewList;
+patch_GprsCamelTDPDataList_acc(From, [TdpData|Tail], NewList) ->
+	NewTdpData = patch(From, TdpData#'GPRS-CamelTDPData'{}),
+	patch_GprsCamelTDPDataList_acc(From, Tail, [NewTdpData|NewList]).
 
-patch_SmsCamelTDPDataList(List) ->
+patch_SmsCamelTDPDataList(From, List) ->
 	% we reverse the origianl list, as the tail recursive _acc function
 	% will invert the order of components again
-	patch_SmsCamelTDPDataList_acc(lists:reverse(List), []).
-patch_SmsCamelTDPDataList_acc([], NewList) -> NewList;
-patch_SmsCamelTDPDataList_acc([TdpData|Tail], NewList) ->
-	NewTdpData = patch(TdpData#'SMS-CAMEL-TDP-Data'{}),
-	patch_GprsCamelTDPDataList_acc(Tail, [NewTdpData|NewList]).
+	patch_SmsCamelTDPDataList_acc(From, lists:reverse(List), []).
+patch_SmsCamelTDPDataList_acc(From, [], NewList) -> NewList;
+patch_SmsCamelTDPDataList_acc(From, [TdpData|Tail], NewList) ->
+	NewTdpData = patch(From, TdpData#'SMS-CAMEL-TDP-Data'{}),
+	patch_GprsCamelTDPDataList_acc(From, Tail, [NewTdpData|NewList]).
 
 
 
 % process the Argument of a particular MAP invocation
-process_component_arg(_From, OpCode, Arg) ->
+process_component_arg(From, OpCode, Arg) ->
 	case Arg of
 		asn1_NOVALUE -> Arg;
-		_ -> patch(Arg)
+		_ -> patch(From,Arg)
 	end.
 
 % recurse over all components
