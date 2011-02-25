@@ -176,7 +176,7 @@ patch(From, #'InsertSubscriberDataArg'{'vlrCamelSubscriptionInfo'=VlrCamel,
 patch(From, #'AnyTimeSubscriptionInterrogationRes'{'camel-SubscriptionInfo'=Csi} = P) ->
 	P#'AnyTimeSubscriptionInterrogationRes'{'camel-SubscriptionInfo'=patch(From, Csi)};
 
-patch(From, asn1_NOVALUE) ->
+patch(_From, asn1_NOVALUE) ->
 	asn1_NOVALUE;
 
 % CAMEL related parsing
@@ -285,14 +285,14 @@ patch(_From, Default) ->
 patch_scaddr(From, {serviceCentreAddressDA,Ar}) ->
 	NewAddr = patch_map_isdn_addr(From, Ar, smsCDA),
 	{serviceCentreAddressDA,NewAddr};
-patch_scaddr(From, Default) ->
+patch_scaddr(_From, Default) ->
 	Default.
 
 patch_oBcsmCamelTDPDataList(From, List) ->
 	% we reverse the origianl list, as the tail recursive _acc function
 	% will invert the order of components again
 	patch_oBcsmCamelTDPDataList_acc(From, lists:reverse(List), []).
-patch_oBcsmCamelTDPDataList_acc(From, [], NewList) -> NewList;
+patch_oBcsmCamelTDPDataList_acc(_From, [], NewList) -> NewList;
 patch_oBcsmCamelTDPDataList_acc(From, [TdpData|Tail], NewList) ->
 	NewTdpData = patch(From, TdpData#'O-BcsmCamelTDPData'{}),
 	patch_oBcsmCamelTDPDataList_acc(From, Tail, [NewTdpData|NewList]).
@@ -301,7 +301,7 @@ patch_tBcsmCamelTDPDataList(From, List) ->
 	% we reverse the origianl list, as the tail recursive _acc function
 	% will invert the order of components again
 	patch_tBcsmCamelTDPDataList_acc(From, lists:reverse(List), []).
-patch_tBcsmCamelTDPDataList_acc(From, [], NewList) -> NewList;
+patch_tBcsmCamelTDPDataList_acc(_From, [], NewList) -> NewList;
 patch_tBcsmCamelTDPDataList_acc(From, [TdpData|Tail], NewList) ->
 	NewTdpData = patch(From, TdpData#'T-BcsmCamelTDPData'{}),
 	patch_tBcsmCamelTDPDataList_acc(From, Tail, [NewTdpData|NewList]).
@@ -310,7 +310,7 @@ patch_AnInfoCritList(From, List) ->
 	% we reverse the origianl list, as the tail recursive _acc function
 	% will invert the order of components again
 	patch_AnInfoCritList_acc(From, lists:reverse(List), []).
-patch_AnInfoCritList_acc(From, [], NewList) -> NewList;
+patch_AnInfoCritList_acc(_From, [], NewList) -> NewList;
 patch_AnInfoCritList_acc(From, [Crit|Tail], NewList) ->
 	NewCrit = patch(From, Crit#'DP-AnalysedInfoCriterium'{}),
 	patch_AnInfoCritList_acc(From, Tail, [NewCrit|NewList]).
@@ -328,7 +328,7 @@ patch_SmsCamelTDPDataList(From, List) ->
 	% we reverse the origianl list, as the tail recursive _acc function
 	% will invert the order of components again
 	patch_SmsCamelTDPDataList_acc(From, lists:reverse(List), []).
-patch_SmsCamelTDPDataList_acc(From, [], NewList) -> NewList;
+patch_SmsCamelTDPDataList_acc(_From, [], NewList) -> NewList;
 patch_SmsCamelTDPDataList_acc(From, [TdpData|Tail], NewList) ->
 	NewTdpData = patch(From, TdpData#'SMS-CAMEL-TDP-Data'{}),
 	patch_GprsCamelTDPDataList_acc(From, Tail, [NewTdpData|NewList]).
