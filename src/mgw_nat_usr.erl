@@ -42,10 +42,20 @@ sccp_masq_dump() ->
 
 %% Callback functions of the OTP behavior
 
-init(Params) ->
+init(_Params) ->
 	sccp_masq:init(),
 	map_masq:config_update(),
-	apply(sctp_handler, init, Params).
+	{ok, MscLocalIp} = application:get_env(msc_local_ip),
+	{ok, MscLocalPort} = application:get_env(msc_local_port),
+	{ok, MscRemoteIp} = application:get_env(msc_remote_ip),
+	{ok, StpRemoteIp} = application:get_env(stp_remote_ip),
+	{ok, StpRemotePort} = application:get_env(stp_remote_port),
+	{ok, RewriteActor} = application:get_env(rewrite_actor),
+	HandleFn = get_handle_fn(RewriteActor),
+	io:format("Starting mgw_nat_usr with rewrite actor ~p~n", [RewriteActor]),
+	SctpHdlrArgs =	[MscLocalIp, MscLocalPort, MscRemoteIp,
+			 StpRemoteIp, StpRemotePort, HandleFn],
+	apply(sctp_handler, init, SctpHdlrArgs).
 
 handle_cast(stop, LoopData) ->
 	{stop, normal, LoopData};
@@ -65,3 +75,10 @@ terminate(_Reason, _LoopData) ->
 handle_info({sctp, Sock, Ip, Port, Data}, LoopData) ->
 	NewL = sctp_handler:handle_sctp(LoopData, {sctp, Sock, Ip, Port, Data}),
 	{noreply, NewL}.
+
+
+% return rewrite_actor function reference
+get_handle_fn(bow_onw) ->
+	fun mgw_nat_act_bow_onw:rewrite_actor/5;
+get_handle_fn(vfuk_onw) ->
+	fun mgw_nat_act_vfuk_onw:rewrite_actor/5.

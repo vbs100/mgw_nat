@@ -2,11 +2,14 @@
 	[{description, "Media Gateway NAT"},
 	 {vsn, "1"},
 	 {modules, [mgw_nat_app, mgw_nat_sup, mgw_nat_usr, mgw_nat, mgw_nat_test,
-		    sccp_masq, map_masq, sctp_handler]},
+		    sccp_masq, map_masq, sctp_handler,
+		    mgw_nat_act_bow_onw, mgw_nat_act_vfuk_onw]},
 	 {registered, [mgw_nat_app]},
 	 {mod, {mgw_nat_app, []}},
 	 {applications, []},
 	 {env, [
+		{rewrite_actor, bow_onw },
+
 		% SCCP static rewrite rules
 		{sccp_rewrite_tbl, [
 			{ 12340000, 98760000, "HLR" },
@@ -27,6 +30,15 @@
 		{msc_local_port, 2904},
 		{msc_remote_ip, {172,16,1,81}},
 		{stp_remote_ip, {172,16,249,20}},
-		{stp_remote_port, 2904}
+		{stp_remote_port, 2904},
+
+		% MAP rewrite table
+		{map_rewrite_table, [
+			{ msc, 1234500070, 678980004014 },
+			{ hlr, 1234500073, 678980004012 },
+			{ scf, 1234500061, 678980004022 },
+			{ vlr, 1234500071, 678980004013 },
+			{ smsCDA, 678980000105, 678990000465 }
+		]}
 	  ]}
 ]}.
