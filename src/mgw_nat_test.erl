@@ -54,7 +54,7 @@ handle_sctp_chunks([Head|Tail], Path, Args) ->
 		#sctp_chunk{type = 0, payload=#sctp_chunk_data{ppi=2, data=Data}} ->
 			%mgw_nat:mangle_rx_data(l, from_stp, Data, fun handle_rewrite_cb/5);
 			put(rewrite_cb, RewriteFn),
-			shim_rw_actor(sctp, from_stp, Path, 2, Data);
+			shim_rw_actor(sctp, from_msc, Path, 2, Data);
 		_ ->
 			ok
 	end,
@@ -72,6 +72,13 @@ shim_rw_actor(sctp, From, Path, 2, DataBin) ->
 		DataBin
 	end;
 shim_rw_actor(Proto, From, Path, MsgType, Msg) ->
-	io:format("~p:~p:~p~n", [Proto, From, Msg]),
+	io:format(" IN:~p:~p:~p~n", [Proto, From, Msg]),
 	Fn = get(rewrite_cb),
-	Fn(Proto, From, Path, MsgType, Msg).
+	MsgOut = Fn(Proto, From, Path, MsgType, Msg),
+	case MsgOut of
+		Msg ->
+			MsgOut;
+		_ ->
+			io:format("OUT:~p:~p:~p~n", [Proto, From, MsgOut]),
+			MsgOut
+	end.
