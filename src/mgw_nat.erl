@@ -20,7 +20,7 @@
 
 -module(mgw_nat).
 -author("Harald Welte <laforge@gnumonks.org>").
--export([mangle_rx_data/3]).
+-export([mangle_rx_data/3, mangle_rx_data/4]).
 
 % exports belwo needed by map_masq.erl
 -export([isup_party_internationalize/2, isup_party_nationalize/2, isup_party_replace_prefix/3]).
@@ -33,14 +33,17 @@
 -include_lib("osmo_ss7/include/isup.hrl").
 -include_lib("osmo_ss7/include/sccp.hrl").
 
-% mangle the received data
 mangle_rx_data(L, From, Data) when is_binary(Data) ->
+	mangle_rx_data(L, From, [], Data).
+
+% mangle the received data
+mangle_rx_data(L, From, Path, Data) when is_list(Path), is_binary(Data) ->
 	{ok, M2ua} = m2ua_codec:parse_m2ua_msg(Data),
 	%io:format("M2UA Decode: ~p~n", [M2ua]),
 	case M2ua of
 		#m2ua_msg{msg_class = ?M2UA_MSGC_MAUP,
 			  msg_type = ?M2UA_MAUP_MSGT_DATA} ->
-			M2ua_out = mangle_rx_m2ua_maup(L, From, M2ua);
+			M2ua_out = mangle_rx_m2ua_maup(L, From, Path, M2ua);
 		#m2ua_msg{} ->
 			% simply pass it along unmodified
 			M2ua_out = M2ua
@@ -50,11 +53,11 @@ mangle_rx_data(L, From, Data) when is_binary(Data) ->
 	m2ua_codec:encode_m2ua_msg(M2ua_out).
 
 % mangle the received M2UA
-mangle_rx_m2ua_maup(L, From, M2ua = #m2ua_msg{parameters = Params}) ->
+mangle_rx_m2ua_maup(L, From, Path, M2ua = #m2ua_msg{parameters = Params}) ->
 	{_Len, M2uaPayload} = proplists:get_value(16#300, Params),
 	Mtp3 = mtp3_codec:parse_mtp3_msg(M2uaPayload),
 	%io:format("MTP3 Decode: ~p~n", [Mtp3]),
-	Mtp3_out = mangle_rx_mtp3(L, From, Mtp3),
+	Mtp3_out = mangle_rx_mtp3(L, From, Path ++ [M2ua], Mtp3),
 	%io:format("MTP3 Encode: ~p~n", [Mtp3_out]),
 	Mtp3OutBin = mtp3_codec:encode_mtp3_msg(Mtp3_out),
 	Params2 = proplists:delete(16#300, Params),
@@ -63,16 +66,16 @@ mangle_rx_m2ua_maup(L, From, M2ua = #m2ua_msg{parameters = Params}) ->
 	M2ua#m2ua_msg{parameters = ParamsNew}.
 
 % mangle the MTP3 payload
-mangle_rx_mtp3(L, From, Mtp3 = #mtp3_msg{service_ind = Service}) ->
-	mangle_rx_mtp3_serv(L, From, Service, Mtp3).
+mangle_rx_mtp3(L, From, Path, Mtp3 = #mtp3_msg{service_ind = Service}) ->
+	mangle_rx_mtp3_serv(L, From, Path, Service, Mtp3).
 
 % mangle the ISUP content
-mangle_rx_mtp3_serv(_L, From, ?MTP3_SERV_ISUP, Mtp3 = #mtp3_msg{payload = Payload}) ->
+mangle_rx_mtp3_serv(_L, From, Path, ?MTP3_SERV_ISUP, Mtp3 = #mtp3_msg{payload = Payload}) ->
 	io:format("ISUP In: ~p~n", [Payload]),
 	Isup = isup_codec:parse_isup_msg(Payload),
 	io:format("ISUP Decode: ~p~n", [Isup]),
 	% FIXME
-	IsupMangled = mangle_rx_isup(From, Isup#isup_msg.msg_type, Isup),
+	IsupMangled = mangle_rx_isup(From, Path, Isup#isup_msg.msg_type, Isup),
 	if IsupMangled == Isup ->
 		Mtp3;
 	   true ->
@@ -83,11 +86,11 @@ mangle_rx_mtp3_serv(_L, From, ?MTP3_SERV_ISUP, Mtp3 = #mtp3_msg{payload = Payloa
 		Mtp3#mtp3_msg{payload = Payload_out}
 	end;
 % mangle the SCCP content
-mangle_rx_mtp3_serv(_L, From, ?MTP3_SERV_SCCP, Mtp3 = #mtp3_msg{payload = Payload}) ->
+mangle_rx_mtp3_serv(_L, From, Path, ?MTP3_SERV_SCCP, Mtp3 = #mtp3_msg{payload = Payload}) ->
 	io:format("SCCP In: ~p~n", [Payload]),
 	{ok, Sccp} = sccp_codec:parse_sccp_msg(Payload),
 	io:format("SCCP Decode: ~p~n", [Sccp]),
-	SccpMangled = mangle_rx_sccp(From, Sccp#sccp_msg.msg_type, Sccp),
+	SccpMangled = mangle_rx_sccp(From, Path ++ [Mtp3], Sccp#sccp_msg.msg_type, Sccp),
 	SccpMasqued = sccp_masq:sccp_masq_msg(From, SccpMangled#sccp_msg.msg_type,
 					      SccpMangled),
 	if SccpMasqued == Sccp ->
@@ -100,7 +103,7 @@ mangle_rx_mtp3_serv(_L, From, ?MTP3_SERV_SCCP, Mtp3 = #mtp3_msg{payload = Payloa
 		Mtp3#mtp3_msg{payload = Payload_out}
 	end;
 % default: do nothing
-mangle_rx_mtp3_serv(_L, _From, _, Mtp3) ->
+mangle_rx_mtp3_serv(_L, _From, _Path, _, Mtp3) ->
 	Mtp3.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -156,7 +159,7 @@ maybe_re_encode(DecOrig, DecNew, MapEncOld) when DecOrig == DecNew ->
 maybe_re_encode(_DecOrig, DecNew, _MapEncOld) ->
 	map_codec:encode_tcap_msg(DecNew).
 
-mangle_rx_sccp(From, ?SCCP_MSGT_UDT, Msg = #sccp_msg{parameters = Opts}) ->
+mangle_rx_sccp(From, _Path, ?SCCP_MSGT_UDT, Msg = #sccp_msg{parameters = Opts}) ->
 	% Mangle the SCCP Calling / Called Addresses
 	CalledParty = proplists:get_value(called_party_addr, Opts),
 	CalledPartyNew = mangle_rx_called(From, CalledParty),
@@ -174,7 +177,7 @@ mangle_rx_sccp(From, ?SCCP_MSGT_UDT, Msg = #sccp_msg{parameters = Opts}) ->
 	Opts3 = lists:keyreplace(user_data, 1, Opts2,
 				 {user_data, MapEncNew}),
 	Msg#sccp_msg{parameters = Opts3};
-mangle_rx_sccp(_From, _MsgType, Msg) ->
+mangle_rx_sccp(_From, _Path, _MsgType, Msg) ->
 	Msg.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -200,7 +203,7 @@ mangle_rx_isup_par(_From, _MsgType, _Msg, Par) ->
 	Par.
 
 % mangle an incoming ISUP message
-mangle_rx_isup(From, MsgType, Msg = #isup_msg{parameters = Params}) ->
+mangle_rx_isup(From, _Path, MsgType, Msg = #isup_msg{parameters = Params}) ->
 	ParamsOut = mangle_rx_isup_params(From, MsgType, Msg, [], Params),
 	% return message with modified parameter list
 	Msg#isup_msg{parameters = ParamsOut}.
