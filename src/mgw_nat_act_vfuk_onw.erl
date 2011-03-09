@@ -22,6 +22,10 @@
 -author("Harald Welte <laforge@gnumonks.org>").
 
 -export([rewrite_actor/5]).
+-export([camelph_twalk_cb/3]).
+
+-include_lib("osmo_map/include/map.hrl").
+-include_lib("osmo_ss7/include/sccp.hrl").
 
 % Rewrite at SCTP (root) level:
 rewrite_actor(sctp, From, Path, 2, DataBin) ->
@@ -43,5 +47,28 @@ rewrite_actor(_Level, _From, _Path, _MsgType, Msg) ->
 	Msg.
 
 
-mangle_map_camel_phase(From, Path, MapDec) ->
-	MapDec.
+mangle_map_camel_phase(from_stp, Path, MapDec) ->
+	MapDec;
+mangle_map_camel_phase(from_msc, Path, MapDec) ->
+	% Resolve the Global Title of the SCCP Called Addr
+	#sccp_msg{parameters = SccpPars} = lists:keyfind(sccp_msg, 1, Path),
+	CalledAddr = proplists:get_value(called_party_addr, SccpPars),
+	#global_title{phone_number = PhoneNum} = CalledAddr#sccp_addr.global_title,
+	PhoneNumInt = osmo_util:digit_list2int(PhoneNum),
+	{ok, CamelPatchTbl} = application:get_env(camel_phase_patch_table),
+	case lists:keyfind(PhoneNumInt, 1, CamelPatchTbl) of
+		false ->
+			MapDec;
+		{ _Num, PhaseL } ->
+			osmo_util:tuple_walk(MapDec, fun camelph_twalk_cb/3, [PhaseL])
+	end.
+
+% tuple tree walker callback function
+camelph_twalk_cb(['begin','MapSpecificPDUs_begin',basicROS,invoke,
+		  'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke',
+		  'UpdateLocationArg'], VC = #'VLR-Capability'{}, [PhaseL|_Args]) ->
+	% Manipulate the VLR capabilities in UpdateLocationArg
+	VC#'VLR-Capability'{supportedCamelPhases = PhaseL};
+camelph_twalk_cb(_Path, Msg, _Args) ->
+	% Default case: simply return the unmodified tuple
+	Msg.
