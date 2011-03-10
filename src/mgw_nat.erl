@@ -1,4 +1,4 @@
-% 
+% MGW NAT core routines as well as ISUP + SCCP Rewriting
 
 % (C) 2011 by Harald Welte <laforge@gnumonks.org>
 % (C) 2011 OnWaves
@@ -28,7 +28,8 @@
 -export([mangle_rx_sccp/4, mangle_rx_isup/4]).
 
 % exports belwo needed by map_masq.erl
--export([isup_party_internationalize/2, isup_party_nationalize/2, isup_party_replace_prefix/3]).
+-export([isup_party_internationalize/2, isup_party_nationalize/2, isup_party_replace_prefix/3,
+	 isup_party_nat00_internationalize/1]).
 
 %-include_lib("kernel/include/inet.hrl").
 %-include_lib("kernel/include/inet_sctp.hrl").
@@ -229,6 +230,8 @@ mangle_isup_number(from_stp, ?ISUP_MSGT_IAM, NumType, PartyNum) ->
 			Num1 = isup_party_internationalize(PartyNum, InternPfx),
 			io:format("IAM MSRN rewrite (STP->MSC): "),
 			isup_party_replace_prefix(Num1, MsrnPfxStp, MsrnPfxMsc);
+		?ISUP_PAR_CALLING_P_NUM ->
+			isup_party_nat00_internationalize(PartyNum);
 		_ ->
 			PartyNum
 	end;
@@ -295,6 +298,27 @@ isup_party_internationalize(PartyNum, CountryCodeInt) ->
 			DigitsOut = CountryCode ++ DigitsIn,
 			NatureOut = ?ISUP_ADDR_NAT_INTERNATIONAL,
 			io:format("Internationalize: ~p -> ~p~n", [DigitsIn, DigitsOut]);
+		_ ->
+			DigitsOut = DigitsIn,
+			NatureOut = Nature
+	end,
+	PartyNum#party_number{phone_number = DigitsOut, nature_of_addr_ind = NatureOut}.
+
+% take something like {national, 00493024033902} and make {intl, 493024033902}
+isup_party_nat00_internationalize(PartyNum) ->
+	#party_number{phone_number = DigitsIn, nature_of_addr_ind = Nature} = PartyNum,
+	case Nature of
+		?ISUP_ADDR_NAT_NATIONAL ->
+			{Pfx, Remain} = lists:split(2, DigitsIn),
+			if Pfx == [0, 0] ->
+				DigitsOut = Remain,
+				NatureOut = ?ISUP_ADDR_NAT_INTERNATIONAL,
+				io:format("National+00 -> International: ~p -> ~p~n",
+					  [DigitsIn, DigitsOut]);
+			   true ->
+				DigitsOut = DigitsIn,
+				NatureOut = Nature
+			end;
 		_ ->
 			DigitsOut = DigitsIn,
 			NatureOut = Nature
