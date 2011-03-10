@@ -38,7 +38,7 @@ rewrite_actor(sctp, From, Path, 2, DataBin) ->
 
 % Rewrite at ISUP level:
 rewrite_actor(isup, From, Path, MsgType, IsupDec) ->
-	mwg_nat:mangle_rx_isup(From, Path, MsgType, IsupDec);
+	mgw_nat:mangle_rx_isup(From, Path, MsgType, IsupDec);
 
 % Rewrite at SCCP level: Static GT rewrite as well as dynamic masquerading
 rewrite_actor(sccp, From, Path, MsgType, SccpDec) ->
