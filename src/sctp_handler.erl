@@ -87,12 +87,12 @@ handle_sctp(L = #loop_data{msc_sock=MscSock, msc_remote_ip=MscRemoteIp, msc_remo
 					NewL = L,
 					% maybe we should simply die?
 					io:format("MSC SCTP comm_lost~n"),
-					exit(1);
+					exit(sctp_comm_lost_msc);
 				addr_unreachable ->
 					NewL = L,
 					io:format("MSC SCTP addr_unreachable~n"),
 					% maybe we should simply die?
-					exit(1)
+					exit(sctp_addr_unreach_msc)
 			end,
 			inet:setopts(MscSock, [{active, once}]);
 		% STP connect or disconnect
@@ -118,7 +118,7 @@ handle_sctp(L = #loop_data{msc_sock=MscSock, msc_remote_ip=MscRemoteIp, msc_remo
 			% maybe we should simply die?
 			NewL = L,
 			io:format("SCTP remote ~p shutdown~n", [RemoteIp]),
-			exit(1);
+			exit(ctp_remote_shutdown);
 		Other ->
 			io:format("OTHER ~p~n", [Other]),
 			NewL = L
