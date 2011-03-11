@@ -22,6 +22,9 @@
 -author("Harald Welte <laforge@gnumonks.org>").
 -export([pcap_apply/3]).
 
+-define(NODEBUG, 1).
+
+-include_lib("eunit/include/eunit.hrl").
 -include_lib("epcap/include/epcap_net.hrl").
 
 pcap_apply(File, Filter, Args) ->
@@ -32,13 +35,18 @@ loop(Args) ->
 	receive
 		[{pkthdr, {_,_,_,{datalink,Datalink}}}, {packet, Packet}] ->
 			Decaps = epcap_net:decapsulate_dlt(Datalink, Packet),
-			handle_pkt_cb(Decaps, Args)
-	end,
-	loop(Args).
+			handle_pkt_cb(Decaps, Args),
+			loop(Args);
+		{epcap, eof} ->
+			?debugFmt("EOF from PCAP~n", []),
+			epcap:stop();
+		Default ->
+			?debugFmt("Unknown ~p from PCAP~n", [Default])
+	end.
 
 
 handle_pkt_cb([Ether, IP, Hdr, Payload], Args) ->
-	io:format("~p:~n  ~p/~p~n", [IP, Hdr, Payload]),
+	?debugFmt("~p:~n  ~p/~p~n", [IP, Hdr, Payload]),
 	case Hdr of
 		#sctp{chunks = Chunks} ->
 			handle_sctp_chunks(Chunks, [Ether, IP, Hdr], Args);
@@ -62,23 +70,16 @@ handle_sctp_chunks([Head|Tail], Path, Args) ->
 
 % Rewrite at SCTP (root) level:
 shim_rw_actor(sctp, From, Path, 2, DataBin) ->
-	io:format("sctp:~p:~p~n", [From, DataBin]),
-	try mgw_nat:mangle_rx_data(From, Path, DataBin, fun shim_rw_actor/5) of
-		Val ->
-			Val
-	catch error:Error ->
-		% some parser error, simply forward msg unmodified
-		io:format("MGW NAT mangling Error: ~p~n", [Error]),
-		DataBin
-	end;
+	?debugFmt("sctp:~p:~p~n", [From, DataBin]),
+	mgw_nat:mangle_rx_data(From, Path, DataBin, fun shim_rw_actor/5);
 shim_rw_actor(Proto, From, Path, MsgType, Msg) ->
-	io:format(" IN:~p:~p:~p~n", [Proto, From, Msg]),
+	?debugFmt(" IN:~p:~p:~p~n", [Proto, From, Msg]),
 	Fn = get(rewrite_cb),
 	MsgOut = Fn(Proto, From, Path, MsgType, Msg),
 	case MsgOut of
 		Msg ->
 			MsgOut;
 		_ ->
-			io:format("OUT:~p:~p:~p~n", [Proto, From, MsgOut]),
+			%io:format("OUT:~p:~p:~p~n", [Proto, From, MsgOut]),
 			MsgOut
 	end.
