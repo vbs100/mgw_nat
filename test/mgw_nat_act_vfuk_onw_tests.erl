@@ -57,7 +57,7 @@
                         asn1_NOVALUE}}}}]}}).
 
 setup() ->
-	application:set_env(undefined, camel_phase_patch_table, [
+	application:set_env(mgw_nat, camel_phase_patch_table, [
                         % destination, phase-tuple-list
                         { 443859078046778, [phase1] }
                 ]).
@@ -65,15 +65,30 @@ setup() ->
 teardown(_) ->
 	application:unset_env(undefined, camel_phase_patch_table).
 
+% Test the tuple walker and camelph_twalk_cb() directly, as we don't have a
+% SCCP header in front of the MAP message and thus we cannot call
+% mangle_map_camel_phase() directly
 camelphase_twalk() ->
 	?assertEqual(?MAP_DEC_OUT, osmo_util:tuple_walk(?MAP_DEC_IN,
 							fun mgw_nat_act_vfuk_onw:camelph_twalk_cb/3,
 							[[phase1]])).
 
+test_pcap(File) ->
+	Args = [{rewrite_fn, fun mgw_nat_act_vfuk_onw:rewrite_actor/5}],
+	case file:read_file_info(File) of
+		{ok, _Info} ->
+			{ok, NrPkts} = ?debugTime("PCAP", osmo_ss7_pcap:pcap_apply(File, "", Args)),
+			?debugFmt("Parsed ~p PCAP packets~n", [NrPkts]);
+		{error, _Reason} ->
+			?debugFmt("Skipping PCAP based tests as no ~p could be found~n",
+				  [File])
+	end.
+
 camel_phase_test_() ->
 	{setup,
 		fun setup/0,
 		fun teardown/1,
-		[ ?_test(camelphase_twalk()) ]
+		[ ?_test(camelphase_twalk()),
+		  ?_test(test_pcap("../priv/map.pcap")) ]
 	}.
 

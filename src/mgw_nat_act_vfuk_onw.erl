@@ -34,7 +34,8 @@ rewrite_actor(sctp, From, Path, 2, DataBin) ->
 			Val
 	catch error:Error ->
 		% some parser error, simply forward msg unmodified
-		io:format("MGW NAT mangling Error: ~p~n", [Error]),
+		error_logger:error_report([{error, Error},
+					   {stacktrace, erlang:get_stacktrace()}]),
 		DataBin
 	end;
 
@@ -47,7 +48,7 @@ rewrite_actor(_Level, _From, _Path, _MsgType, Msg) ->
 	Msg.
 
 
-mangle_map_camel_phase(from_stp, Path, MapDec) ->
+mangle_map_camel_phase(from_stp, _Path, MapDec) ->
 	MapDec;
 mangle_map_camel_phase(from_msc, Path, MapDec) ->
 	% Resolve the Global Title of the SCCP Called Addr
@@ -55,7 +56,7 @@ mangle_map_camel_phase(from_msc, Path, MapDec) ->
 	CalledAddr = proplists:get_value(called_party_addr, SccpPars),
 	#global_title{phone_number = PhoneNum} = CalledAddr#sccp_addr.global_title,
 	PhoneNumInt = osmo_util:digit_list2int(PhoneNum),
-	{ok, CamelPatchTbl} = application:get_env(camel_phase_patch_table),
+	{ok, CamelPatchTbl} = application:get_env(mgw_nat, camel_phase_patch_table),
 	case lists:keyfind(PhoneNumInt, 1, CamelPatchTbl) of
 		false ->
 			MapDec;
