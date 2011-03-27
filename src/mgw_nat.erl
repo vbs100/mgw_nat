@@ -78,15 +78,24 @@ mangle_rx_mtp3_serv(Fn, From, Path, ?MTP3_SERV_ISUP, Mtp3 = #mtp3_msg{payload = 
 	Isup = isup_codec:parse_isup_msg(Payload),
 	io:format("ISUP Decode: ~p~n", [Isup]),
 	%IsupMangled = mangle_rx_isup(From, Path, Isup#isup_msg.msg_type, Isup),
-	IsupMangled = Fn(isup, From, Path, Isup#isup_msg.msg_type, Isup),
-	if IsupMangled == Isup ->
-		Mtp3;
-	   true ->
-		io:format("ISUP Encode In: ~p~n", [IsupMangled]),
-		Payload_out = isup_codec:encode_isup_msg(IsupMangled),
-		io:format("ISUP Encode Out: ~p~n", [Payload_out]),
-		% return modified MTP3 payload
-		Mtp3#mtp3_msg{payload = Payload_out}
+	try Fn(isup, From, Path, Isup#isup_msg.msg_type, Isup) of
+		IsupMangled ->
+			if IsupMangled == Isup ->
+				% return the unmodified original payload
+				Mtp3;
+			   true ->
+				io:format("ISUP Encode In: ~p~n", [IsupMangled]),
+				Payload_out = isup_codec:encode_isup_msg(IsupMangled),
+				io:format("ISUP Encode Out: ~p~n", [Payload_out]),
+				% return modified MTP3 payload
+				Mtp3#mtp3_msg{payload = Payload_out}
+			end
+	catch error:Error ->
+		io:format("ISUP In: ~p~n", [Payload]),
+		io:format("ISUP Decode: ~p~n", [Isup]),
+		ip:format("ISUP mangling Error: ~p~n", [Error]),
+		% return the unmodified original payload
+		Mtp3
 	end;
 % mangle the SCCP content
 mangle_rx_mtp3_serv(Fn, From, Path, ?MTP3_SERV_SCCP, Mtp3 = #mtp3_msg{payload = Payload}) ->
