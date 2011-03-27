@@ -89,6 +89,6 @@ camel_phase_test_() ->
 		fun setup/0,
 		fun teardown/1,
 		[ ?_test(camelphase_twalk()),
-		  ?_test(test_pcap("../priv/map.pcap")) ]
+		  { timeout, 5*60, ?_test(test_pcap("../priv/map.pcap")) } ]
 	}.
 
