@@ -52,15 +52,16 @@ mangle_map_camel_phase(from_stp, _Path, MapDec) ->
 	MapDec;
 mangle_map_camel_phase(from_msc, Path, MapDec) ->
 	% Resolve the Global Title of the SCCP Called Addr
-	#sccp_msg{parameters = SccpPars} = lists:keyfind(sccp_msg, 1, Path),
+	{value, #sccp_msg{parameters = SccpPars}} = lists:keysearch(sccp_msg, 1, Path),
 	CalledAddr = proplists:get_value(called_party_addr, SccpPars),
 	#global_title{phone_number = PhoneNum} = CalledAddr#sccp_addr.global_title,
 	PhoneNumInt = osmo_util:digit_list2int(PhoneNum),
 	{ok, CamelPatchTbl} = application:get_env(mgw_nat, camel_phase_patch_table),
-	case lists:keyfind(PhoneNumInt, 1, CamelPatchTbl) of
+	case lists:keysearch(PhoneNumInt, 1, CamelPatchTbl) of
 		false ->
 			MapDec;
-		{ _Num, PhaseL } ->
+		{value, { _Num, PhaseL }} ->
+			io:format("Rewriting Camel Phase List to ~p, GT ~p~n", [PhaseL, PhoneNumInt]),
 			osmo_util:tuple_walk(MapDec, fun camelph_twalk_cb/3, [PhaseL])
 	end.
 
