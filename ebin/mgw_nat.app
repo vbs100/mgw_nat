@@ -8,7 +8,7 @@
 	 {mod, {mgw_nat_app, []}},
 	 {applications, []},
 	 {env, [
-		{rewrite_actor, bow_onw },
+		{rewrite_act_mod, mgw_nat_act_bow_onw },
 
 		% SCCP static rewrite rules
 		{sccp_rewrite_tbl, [

@@ -36,13 +36,13 @@
 	{msc_sock, msc_local_ip, msc_remote_ip, msc_remote_port,
 	 msc_local_port, msc_assoc_id, 
 	 stp_sock, stp_remote_ip, stp_remote_port, stp_assoc_id,
-	 handle_fn
+	 rewrite_act_mod
 	}).
 
 -define(COMMON_SOCKOPTS, [{active, once}, {reuseaddr, true}]).
 
 % initialize the sockets towards MSC (listening) and STP (connect)
-init(MscLocalIP, MscLocalPort, MscRemoteIP, StpRemoteIP, StpRemotePort, HandleFn) ->
+init(MscLocalIP, MscLocalPort, MscRemoteIP, StpRemoteIP, StpRemotePort, RewriteActMod) ->
 	{ok, MscSock} = gen_sctp:open([{ip, MscLocalIP},{port,MscLocalPort}]
 					++ ?COMMON_SOCKOPTS),
 	io:format("Listening for MSC on ~w:~w. ~w~n",
@@ -52,7 +52,7 @@ init(MscLocalIP, MscLocalPort, MscRemoteIP, StpRemoteIP, StpRemotePort, HandleFn
 	L = #loop_data{msc_sock = MscSock, msc_local_ip = MscLocalIP, 
 			msc_remote_ip = MscRemoteIP,
 			stp_sock = StpSock, stp_remote_ip = StpRemoteIP,
-			stp_remote_port = StpRemotePort, handle_fn = HandleFn},
+			stp_remote_port = StpRemotePort, rewrite_act_mod = RewriteActMod},
 	{ok, L}.
 
 % initiate a connection to STP as a client
@@ -63,7 +63,7 @@ initiate_stp_connection(#loop_data{stp_sock = Sock, stp_remote_ip = IP, stp_remo
 % main loop function
 handle_sctp(L = #loop_data{msc_sock=MscSock, msc_remote_ip=MscRemoteIp, msc_remote_port=MscRemotePort,
 		    stp_sock=StpSock, stp_remote_ip=StpRemoteIp, stp_remote_port=StpRemotePort,
-		    handle_fn=HandleFn},
+		    rewrite_act_mod=RewriteActMod},
 	    Sctp) ->
 	io:format("Entering receive loop ~p~n", [L]),
 	io:format("======================================================================~n"),
@@ -104,13 +104,13 @@ handle_sctp(L = #loop_data{msc_sock=MscSock, msc_remote_ip=MscRemoteIp, msc_remo
 		% MSC data
 		{sctp, MscSock, MscRemoteIp, MscRemotePort, {[Anc], Data}} ->
 			io:format("MSC rx data: ~p ~p~n", [Anc, Data]),
-			handle_rx_data(HandleFn, L, from_msc, Anc, Data),
+			handle_rx_data(RewriteActMod, L, from_msc, Anc, Data),
 			inet:setopts(MscSock, [{active, once}]),
 			NewL = L;
 		% STP data
 		{sctp, StpSock, StpRemoteIp, StpRemotePort, {[Anc], Data}} ->
 			io:format("STP rx data: ~p ~p~n", [Anc, Data]),
-			handle_rx_data(HandleFn, L, from_stp, Anc, Data),
+			handle_rx_data(RewriteActMod, L, from_stp, Anc, Data),
 			inet:setopts(StpSock, [{active, once}]),
 			NewL = L;
 		{sctp, _Sock, RemoteIp, _Remote_port, {_Anc, Data}}
@@ -127,9 +127,9 @@ handle_sctp(L = #loop_data{msc_sock=MscSock, msc_remote_ip=MscRemoteIp, msc_remo
 
 
 % handle incoming data on one of the SCTP sockets
-handle_rx_data(Fn, L, From, SRInf = #sctp_sndrcvinfo{ppid = 2,
+handle_rx_data(Mod, L, From, SRInf = #sctp_sndrcvinfo{ppid = 2,
 						 stream = Stream}, Data) when is_binary(Data) ->
-	DataOut = Fn(sctp, From, [L, SRInf], 2, Data),
+	DataOut = Mod:rewrite_actor(sctp, From, [L, SRInf], 2, Data),
 	% send mangled data to other peer
 	case From of
 		from_msc ->
@@ -149,5 +149,5 @@ handle_rx_data(Fn, L, From, SRInf = #sctp_sndrcvinfo{ppid = 2,
 	end,
 	ok = gen_sctp:send(Sock, SndRcvInfo, DataOut);
 
-handle_rx_data(_Fn, _L, From, SRInfo, Data) when is_binary(Data) ->
+handle_rx_data(_Mod, _L, From, SRInfo, Data) when is_binary(Data) ->
 	io:format("Unhandled Rx Data from SCTP from ~p: ~p, ~p~n", [From, SRInfo, Data]).
