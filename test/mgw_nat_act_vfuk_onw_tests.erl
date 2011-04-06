@@ -4,6 +4,8 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -include_lib("osmo_map/include/map.hrl").
+-include_lib("osmo_ss7/include/sccp.hrl").
+-include_lib("osmo_ss7/include/osmo_util.hrl").
 
 
 
@@ -58,9 +60,13 @@
 
 setup() ->
 	application:set_env(mgw_nat, camel_phase_patch_table, [
-                        % destination, phase-tuple-list
-                        { 443859078046778, [phase1] }
-                ]).
+			% each element in this list is a tuple of two lists:
+			%  first half of the tuple: property-list of #gtt_match field members
+			%  second half: list of atoms for camel phase [ phase1, phase2, phase3 ]
+			{ [ {gt_range_from,	443850000000000 },
+			    {gt_range_to,	443859999999999 } ], [ phase1 ] }
+	]),
+	mgw_nat_act_vfuk_onw:reload_config().
 
 teardown(_) ->
 	application:unset_env(undefined, camel_phase_patch_table).
@@ -72,6 +78,26 @@ camelphase_twalk() ->
 	?assertEqual(?MAP_DEC_OUT, osmo_util:tuple_walk(?MAP_DEC_IN,
 							fun mgw_nat_act_vfuk_onw:camelph_twalk_cb/3,
 							[[phase1]])).
+
+build_fake_sccp_msg(CalledDigList) ->
+	Gt = #global_title{phone_number = CalledDigList},
+	SccpAddr = #sccp_addr{global_title = Gt},
+	#sccp_msg{parameters = [{called_party_addr, SccpAddr}]}.
+
+% a full test testing the entire chain...
+camelphase_full() ->
+	% Set up a fake SCCP message with Called Addr and GT
+	SccpDec = build_fake_sccp_msg([4,4,3,8,5,0,0,0,0,0,0,0,0,0,1]),
+	% call the rewrite actor
+	MapOut = mgw_nat_act_vfuk_onw:rewrite_actor(map, from_msc, [SccpDec], 0, ?MAP_DEC_IN),
+	?assertEqual(?MAP_DEC_OUT, MapOut).
+
+camelphase_full_nomatch() ->
+	% Set up a fake SCCP message with Called Addr and GT
+	SccpDec = build_fake_sccp_msg([4,4,3,8,6,5,4,3,2,1,2,3,4,5,1]),
+	% call the rewrite actor
+	MapOut = mgw_nat_act_vfuk_onw:rewrite_actor(map, from_msc, [SccpDec], 0, ?MAP_DEC_IN),
+	?assertEqual(?MAP_DEC_IN, MapOut).
 
 test_pcap(File) ->
 	Args = [{rewrite_fn, fun mgw_nat_act_vfuk_onw:rewrite_actor/5}],
@@ -89,6 +115,7 @@ camel_phase_test_() ->
 		fun setup/0,
 		fun teardown/1,
 		[ ?_test(camelphase_twalk()),
+		  ?_test(camelphase_full()),
+		  ?_test(camelphase_full_nomatch()),
 		  { timeout, 5*60, ?_test(test_pcap("../priv/map.pcap")) } ]
 	}.
-

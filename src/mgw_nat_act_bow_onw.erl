@@ -21,7 +21,7 @@
 -module(mgw_nat_act_bow_onw).
 -author("Harald Welte <laforge@gnumonks.org>").
 
--export([rewrite_actor/5]).
+-export([rewrite_actor/5, reload_config/0]).
 
 -include_lib("osmo_ss7/include/sccp.hrl").
 
@@ -53,3 +53,6 @@ rewrite_actor(map, From, _Path, 0, MapDec) ->
 % Default action: no rewrite
 rewrite_actor(_Level, _From, _Path, _MsgType, Msg) ->
 	Msg.
+
+reload_config() ->
+	ok.

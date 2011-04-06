@@ -21,7 +21,7 @@
 -module(mgw_nat_act_vfuk_onw).
 -author("Harald Welte <laforge@gnumonks.org>").
 
--export([rewrite_actor/5]).
+-export([rewrite_actor/5, reload_config/0]).
 -export([camelph_twalk_cb/3]).
 
 -include_lib("osmo_map/include/map.hrl").
@@ -54,16 +54,17 @@ mangle_map_camel_phase(from_msc, Path, MapDec) ->
 	% Resolve the Global Title of the SCCP Called Addr
 	{value, #sccp_msg{parameters = SccpPars}} = lists:keysearch(sccp_msg, 1, Path),
 	CalledAddr = proplists:get_value(called_party_addr, SccpPars),
-	#global_title{phone_number = PhoneNum} = CalledAddr#sccp_addr.global_title,
-	PhoneNumInt = osmo_util:digit_list2int(PhoneNum),
-	{ok, CamelPatchTbl} = application:get_env(mgw_nat, camel_phase_patch_table),
-	case lists:keysearch(PhoneNumInt, 1, CamelPatchTbl) of
+	{ok, IntTbl} = application:get_env(mgw_nat, int_camel_ph_tbl),
+	case osmo_ss7_gtt:global_title_match(IntTbl, CalledAddr) of
 		false ->
 			MapDec;
-		{value, { _Num, PhaseL }} ->
+		PhaseL ->
+			#global_title{phone_number = PhoneNum} = CalledAddr#sccp_addr.global_title,
+			PhoneNumInt = osmo_util:digit_list2int(PhoneNum),
 			io:format("Rewriting Camel Phase List to ~p, GT ~p~n", [PhaseL, PhoneNumInt]),
 			osmo_util:tuple_walk(MapDec, fun camelph_twalk_cb/3, [PhaseL])
 	end.
+
 
 % tuple tree walker callback function
 camelph_twalk_cb(['begin','MapSpecificPDUs_begin',basicROS,invoke,
@@ -74,3 +75,24 @@ camelph_twalk_cb(['begin','MapSpecificPDUs_begin',basicROS,invoke,
 camelph_twalk_cb(_Path, Msg, _Args) ->
 	% Default case: simply return the unmodified tuple
 	Msg.
+
+
+gen_int_camelph_tbl(L) ->
+	gen_int_camelph_tbl(L, []).
+gen_int_camelph_tbl([], Out) ->
+	Out;
+gen_int_camelph_tbl([{GttPart, PhasePart}|Tail], Out) ->
+	GttMatch = osmo_ss7_gtt:'#new-gtt_match'(GttPart),
+	% Fixme: use ordered insert!
+	gen_int_camelph_tbl(Tail, Out ++ [{GttMatch, PhasePart}]).
+
+reload_config() ->
+	{ok, CamelPatchTblIn} = application:get_env(mgw_nat, camel_phase_patch_table),
+	io:format("VFUK-ONW actor: reloading config ~p~n", [CamelPatchTblIn]),
+	try gen_int_camelph_tbl(CamelPatchTblIn) of
+		TblOut ->
+			application:set_env(mgw_nat, int_camel_ph_tbl, TblOut)
+		catch error:Error ->
+			error_logger:error_report([{error, Error},
+						   {stacktrace, erlang:get_stacktrace()}])
+	end.
