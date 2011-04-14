@@ -35,7 +35,9 @@ rewrite_actor(sctp, From, Path, 2, DataBin) ->
 	catch error:Error ->
 		% some parser error, simply forward msg unmodified
 		error_logger:error_report([{error, Error},
-					   {stacktrace, erlang:get_stacktrace()}]),
+					   {stacktrace, erlang:get_stacktrace()},
+					   {from, From}, {path, Path},
+					   {data_bin, DataBin}]),
 		DataBin
 	end;
 
