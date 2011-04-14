@@ -39,7 +39,7 @@
 	 rewrite_act_mod
 	}).
 
--define(COMMON_SOCKOPTS, [{active, once}, {reuseaddr, true}]).
+-define(COMMON_SOCKOPTS, [{active, once}, {reuseaddr, true}, {sctp_nodelay, true}]).
 
 % initialize the sockets towards MSC (listening) and STP (connect)
 init(MscLocalIP, MscLocalPort, MscRemoteIP, StpRemoteIP, StpRemotePort, RewriteActMod) ->
