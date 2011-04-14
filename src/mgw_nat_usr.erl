@@ -23,7 +23,8 @@
 
 -behavior(gen_server).
 
--export([start_link/1, stop/0, sccp_masq_reset/0, sccp_masq_dump/0]).
+-export([start_link/1, stop/0, sccp_masq_reset/0, sccp_masq_dump/0,
+	 reload_config/0]).
 -export([init/1, handle_cast/2, handle_info/2, terminate/2]).
 
 
@@ -39,6 +40,8 @@ sccp_masq_reset() ->
 sccp_masq_dump() ->
 	gen_server:cast(?MODULE, sccp_masq_dump).
 
+reload_config() ->
+	gen_server:cast(?MODULE, reload_config).
 
 %% Callback functions of the OTP behavior
 
