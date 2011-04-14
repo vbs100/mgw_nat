@@ -74,9 +74,9 @@ mangle_rx_mtp3(Fn, From, Path, Mtp3 = #mtp3_msg{service_ind = Service}) ->
 
 % mangle the ISUP content
 mangle_rx_mtp3_serv(Fn, From, Path, ?MTP3_SERV_ISUP, Mtp3 = #mtp3_msg{payload = Payload}) ->
-	io:format("ISUP In: ~p~n", [Payload]),
+	%io:format("ISUP In: ~p~n", [Payload]),
 	Isup = isup_codec:parse_isup_msg(Payload),
-	io:format("ISUP Decode: ~p~n", [Isup]),
+	%io:format("ISUP Decode: ~p~n", [Isup]),
 	%IsupMangled = mangle_rx_isup(From, Path, Isup#isup_msg.msg_type, Isup),
 	try Fn(isup, From, Path, Isup#isup_msg.msg_type, Isup) of
 		IsupMangled ->
@@ -99,9 +99,9 @@ mangle_rx_mtp3_serv(Fn, From, Path, ?MTP3_SERV_ISUP, Mtp3 = #mtp3_msg{payload = 
 	end;
 % mangle the SCCP content
 mangle_rx_mtp3_serv(Fn, From, Path, ?MTP3_SERV_SCCP, Mtp3 = #mtp3_msg{payload = Payload}) ->
-	io:format("SCCP In: ~p~n", [Payload]),
+	%io:format("SCCP In: ~p~n", [Payload]),
 	{ok, Sccp} = sccp_codec:parse_sccp_msg(Payload),
-	io:format("SCCP Decode: ~p~n", [Sccp]),
+	%io:format("SCCP Decode: ~p~n", [Sccp]),
 	SccpMangled = Fn(sccp, From, Path ++ [Mtp3], Sccp#sccp_msg.msg_type, Sccp),
 	SccpMasqued = mangle_rx_sccp_map(Fn, From, Path ++ [Mtp3], SccpMangled#sccp_msg.msg_type, Sccp),
 	%SccpMangled = mangle_rx_sccp(From, Path ++ [Mtp3], Sccp#sccp_msg.msg_type, Sccp),
@@ -110,9 +110,9 @@ mangle_rx_mtp3_serv(Fn, From, Path, ?MTP3_SERV_SCCP, Mtp3 = #mtp3_msg{payload = 
 	if SccpMasqued == Sccp ->
 		Mtp3;
 	   true ->
-		io:format("SCCP Encode In: ~p~n", [SccpMasqued]),
+		%io:format("SCCP Encode In: ~p~n", [SccpMasqued]),
 		Payload_out = sccp_codec:encode_sccp_msg(SccpMasqued),
-		io:format("SCCP Encode Out: ~p~n", [Payload_out]),
+		%io:format("SCCP Encode Out: ~p~n", [Payload_out]),
 		% return modified MTP3 payload
 		Mtp3#mtp3_msg{payload = Payload_out}
 	end;

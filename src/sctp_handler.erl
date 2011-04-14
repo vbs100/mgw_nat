@@ -65,8 +65,8 @@ handle_sctp(L = #loop_data{msc_sock=MscSock, msc_remote_ip=MscRemoteIp, msc_remo
 		    stp_sock=StpSock, stp_remote_ip=StpRemoteIp, stp_remote_port=StpRemotePort,
 		    rewrite_act_mod=RewriteActMod},
 	    Sctp) ->
-	io:format("Entering receive loop ~p~n", [L]),
-	io:format("======================================================================~n"),
+	%io:format("Entering receive loop ~p~n", [L]),
+	%io:format("======================================================================~n"),
 	case Sctp of
 		% MSC connect or disconnect
 		{sctp, MscSock, MscRemoteIp, Port, {ANC, SAC}}
@@ -103,13 +103,13 @@ handle_sctp(L = #loop_data{msc_sock=MscSock, msc_remote_ip=MscRemoteIp, msc_remo
 			NewL = L;
 		% MSC data
 		{sctp, MscSock, MscRemoteIp, MscRemotePort, {[Anc], Data}} ->
-			io:format("MSC rx data: ~p ~p~n", [Anc, Data]),
+			%io:format("MSC rx data: ~p ~p~n", [Anc, Data]),
 			handle_rx_data(RewriteActMod, L, from_msc, Anc, Data),
 			inet:setopts(MscSock, [{active, once}]),
 			NewL = L;
 		% STP data
 		{sctp, StpSock, StpRemoteIp, StpRemotePort, {[Anc], Data}} ->
-			io:format("STP rx data: ~p ~p~n", [Anc, Data]),
+			%io:format("STP rx data: ~p ~p~n", [Anc, Data]),
 			handle_rx_data(RewriteActMod, L, from_stp, Anc, Data),
 			inet:setopts(StpSock, [{active, once}]),
 			NewL = L;
