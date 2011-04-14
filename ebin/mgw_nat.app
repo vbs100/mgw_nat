@@ -8,7 +8,8 @@
 	 {mod, {mgw_nat_app, []}},
 	 {applications, []},
 	 {env, [
-		{rewrite_act_mod, mgw_nat_act_bow_onw },
+		% Specify the rewrite actor module
+		%{rewrite_act_mod, mgw_nat_act_bow_onw },
 
 		% SCCP static rewrite rules
 		{sccp_rewrite_tbl, [
@@ -16,23 +17,23 @@
 			{ 12340001, 98760001, "VLR" }
 		]},
 
-		% SCCP source masquerading pool
+		% Example SCCP source masquerading pool
 		{sccp_masq_gt_base, 12340000},
 		{sccp_masq_gt_max, 9999},
 
-		% ISUP rewrite
+		% Example ISUP rewrite
 		{msrn_pfx_msc, 35489099},
 		{msrn_pfx_stp, 6392994200},
 		{intern_pfx, 63},
 
-		% SCTP / IP config
+		% Example SCTP / IP config
 		{msc_local_ip, any},
 		{msc_local_port, 2904},
 		{msc_remote_ip, {172,16,1,81}},
 		{stp_remote_ip, {172,16,249,20}},
 		{stp_remote_port, 2904},
 
-		% MAP rewrite table
+		% Example MAP rewrite table
 		{map_rewrite_table, [
 			{ msc, 1234500070, 678980004014 },
 			{ hlr, 1234500073, 678980004012 },

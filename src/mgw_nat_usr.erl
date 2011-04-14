@@ -48,12 +48,13 @@ reload_config() ->
 init(_Params) ->
 	sccp_masq:init(),
 	map_masq:config_update(),
-	{ok, MscLocalIp} = application:get_env(msc_local_ip),
-	{ok, MscLocalPort} = application:get_env(msc_local_port),
-	{ok, MscRemoteIp} = application:get_env(msc_remote_ip),
-	{ok, StpRemoteIp} = application:get_env(stp_remote_ip),
-	{ok, StpRemotePort} = application:get_env(stp_remote_port),
-	{ok, RewriteActMod} = application:get_env(rewrite_act_mod),
+	MscLocalIp = get_app_config(msc_local_ip),
+	MscLocalPort = get_app_config(msc_local_port),
+	MscRemoteIp = get_app_config(msc_remote_ip),
+	StpRemoteIp = get_app_config(stp_remote_ip),
+	StpRemotePort = get_app_config(stp_remote_port),
+	RewriteActMod = get_app_config(rewrite_act_mod),
+	RewriteActMod:reload_config(),
 	io:format("Starting mgw_nat_usr with rewrite actor module ~p~n", [RewriteActMod]),
 	SctpHdlrArgs =	[MscLocalIp, MscLocalPort, MscRemoteIp,
 			 StpRemoteIp, StpRemotePort, RewriteActMod],
@@ -71,7 +72,7 @@ handle_cast(sccp_masq_dump, LoopData) ->
 	{noreply, LoopData};
 
 handle_cast(reload_config, LoopData) ->
-	{ok, RewriteActMod} = application:get_env(rewrite_act_mod),
+	RewriteActMod = get_app_config(rewrite_act_mod),
 	RewriteActMod:reload_config(),
 	{noreply, LoopData}.
 
@@ -83,3 +84,13 @@ terminate(_Reason, _LoopData) ->
 handle_info({sctp, Sock, Ip, Port, Data}, LoopData) ->
 	NewL = sctp_handler:handle_sctp(LoopData, {sctp, Sock, Ip, Port, Data}),
 	{noreply, NewL}.
+
+get_app_config(Name) ->
+	case application:get_env(Name) of
+	    undefined ->
+		error_logger:error_report([{error, app_cfg_missing},
+					   {get_app_config, Name}]),
+		throw(app_cfg_missing);
+	    {ok, Val} ->
+		Val
+	end.
