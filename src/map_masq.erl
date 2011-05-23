@@ -384,7 +384,7 @@ handle_tcap_components_acc(From, [Component|Tail], NewComponents) ->
 					NewBody = Body#'MapSpecificPDUs_continue_components_SEQOF_basicROS_invoke'{argument=NewArg};
 				#'MapSpecificPDUs_continue_components_SEQOF_basicROS_returnResult'{result=#'MapSpecificPDUs_continue_components_SEQOF_basicROS_returnResult_result'{opcode={local, OpCode}, result=Arg} = R} ->
 					NewArg = process_component_arg(From, OpCode, Arg),
-					NewBody = Body#'MapSpecificPDUs_end_components_SEQOF_basicROS_returnResult'{result=R#'MapSpecificPDUs_end_components_SEQOF_basicROS_returnResult_result'{result=NewArg}};
+					NewBody = Body#'MapSpecificPDUs_continue_components_SEQOF_basicROS_returnResult'{result=R#'MapSpecificPDUs_continue_components_SEQOF_basicROS_returnResult_result'{result=NewArg}};
 				#'MapSpecificPDUs_continue_components_SEQOF_returnResultNotLast'{result=#'MapSpecificPDUs_continue_components_SEQOF_returnResultNotLast_result'{opcode={local, OpCode}, result=Arg} = R} ->
 					NewArg = process_component_arg(From, OpCode, Arg),
 					NewBody = Body#'MapSpecificPDUs_continue_components_SEQOF_returnResultNotLast'{result=R#'MapSpecificPDUs_continue_components_SEQOF_returnResultNotLast_result'{result=NewArg}};
