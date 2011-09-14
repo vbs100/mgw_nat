@@ -2,14 +2,12 @@
 	[{description, "Media Gateway NAT"},
 	 {vsn, "1"},
 	 {modules, [mgw_nat_app, mgw_nat_sup, mgw_nat_usr, mgw_nat,
-		    sccp_masq, map_masq, sctp_handler,
+		    mgw_nat_adm, sccp_masq, map_masq, sctp_handler,
 		    mgw_nat_act_bow_onw, mgw_nat_act_vfuk_onw]},
 	 {registered, [mgw_nat_app]},
 	 {mod, {mgw_nat_app, []}},
 	 {applications, []},
 	 {env, [
-		% Specify the rewrite actor module
-		%{rewrite_act_mod, mgw_nat_act_bow_onw },
 
 		% SCCP static rewrite rules
 		{sccp_rewrite_tbl, [
@@ -27,11 +25,26 @@
 		{intern_pfx, 63},
 
 		% Example SCTP / IP config
-		{msc_local_ip, any},
-		{msc_local_port, 2904},
-		{msc_remote_ip, {172,16,1,81}},
-		{stp_remote_ip, {172,16,249,20}},
-		{stp_remote_port, 2904},
+		{sign_links, [
+			{mgw_nat_msc1, [
+				{msc_local_ip, any},
+				{msc_local_port, 2904},
+				{msc_remote_ip, {172,16,1,81}},
+				{stp_remote_ip, {172,16,249,20}},
+				{stp_remote_port, 2904},
+				% Specify the rewrite actor module
+				{rewrite_act_mod, mgw_nat_act_bow_onw }
+			]},
+			{mgw_nat_msc2, [
+				{msc_local_ip, any},
+				{msc_local_port, 2905},
+				{msc_remote_ip, {172,16,1,81}},
+				%{stp_remote_ip, {172,16,249,20}},
+				{stp_remote_port, 2905},
+				% Specify the rewrite actor module
+				{rewrite_act_mod, mgw_nat_act_bow_onw }
+			]}
+		]},
 
 		% Example MAP rewrite table
 		{map_rewrite_table, [

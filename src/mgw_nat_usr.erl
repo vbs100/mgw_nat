@@ -23,74 +23,57 @@
 
 -behavior(gen_server).
 
--export([start_link/1, stop/0, sccp_masq_reset/0, sccp_masq_dump/0,
-	 reload_config/0]).
+-export([start_link/1, stop/0]).
 -export([init/1, handle_cast/2, handle_info/2, terminate/2]).
 
 
 start_link(Params) ->
-	gen_server:start_link({local, ?MODULE}, ?MODULE, Params, []).
+	MscName = get_cfg_pl_val(msc_name, Params),
+	gen_server:start_link({local, MscName}, ?MODULE, Params, []).
 
 stop() ->
 	gen_server:cast(?MODULE, stop).
 
-sccp_masq_reset() ->
-	gen_server:cast(?MODULE, sccp_masq_reset).
-
-sccp_masq_dump() ->
-	gen_server:cast(?MODULE, sccp_masq_dump).
-
-reload_config() ->
-	gen_server:cast(?MODULE, reload_config).
-
 %% Callback functions of the OTP behavior
 
-init(_Params) ->
-	sccp_masq:init(),
-	map_masq:config_update(),
-	MscLocalIp = get_app_config(msc_local_ip),
-	MscLocalPort = get_app_config(msc_local_port),
-	MscRemoteIp = get_app_config(msc_remote_ip),
-	StpRemoteIp = get_app_config(stp_remote_ip),
-	StpRemotePort = get_app_config(stp_remote_port),
-	RewriteActMod = get_app_config(rewrite_act_mod),
+init(Params) ->
+	io:format("Starting mgw_nat_usr with Args ~p~n", [Params]),
+	MscLocalIp = get_cfg_pl_val(msc_local_ip, Params),
+	MscLocalPort = get_cfg_pl_val(msc_local_port, Params),
+	MscRemoteIp = get_cfg_pl_val(msc_remote_ip, Params),
+	StpRemoteIp = get_cfg_pl_val(stp_remote_ip, Params),
+	StpRemotePort = get_cfg_pl_val(stp_remote_port, Params),
+	RewriteActMod = get_cfg_pl_val(rewrite_act_mod, Params),
 	RewriteActMod:reload_config(),
-	io:format("Starting mgw_nat_usr with rewrite actor module ~p~n", [RewriteActMod]),
 	SctpHdlrArgs =	[MscLocalIp, MscLocalPort, MscRemoteIp,
 			 StpRemoteIp, StpRemotePort, RewriteActMod],
-	apply(sctp_handler, init, SctpHdlrArgs).
+	LoopDat = apply(sctp_handler, init, SctpHdlrArgs),
+	{ok, {Params, LoopDat}}.
+
+% this cast is produced by mgw_nat_sup child walker
+handle_cast(reload_config, L = {Params, _LoopData}) ->
+	RewriteActMod = get_cfg_pl_val(rewrite_act_mod, Params),
+	RewriteActMod:reload_config(),
+	{noreply, L};
 
 handle_cast(stop, LoopData) ->
-	{stop, normal, LoopData};
-
-handle_cast(sccp_masq_reset, LoopData) ->
-	sccp_masq:reset(),
-	{noreply, LoopData};
-
-handle_cast(sccp_masq_dump, LoopData) ->
-	sccp_masq:dump(),
-	{noreply, LoopData};
-
-handle_cast(reload_config, LoopData) ->
-	RewriteActMod = get_app_config(rewrite_act_mod),
-	RewriteActMod:reload_config(),
-	{noreply, LoopData}.
+	{stop, normal, LoopData}.
 
 
 terminate(_Reason, _LoopData) ->
 	ok.
 
 % callback for other events like incoming SCTP message
-handle_info({sctp, Sock, Ip, Port, Data}, LoopData) ->
+handle_info({sctp, Sock, Ip, Port, Data}, {InitParams, LoopData}) ->
 	NewL = sctp_handler:handle_sctp(LoopData, {sctp, Sock, Ip, Port, Data}),
-	{noreply, NewL}.
+	{noreply, {InitParams, NewL}}.
 
-get_app_config(Name) ->
-	case application:get_env(Name) of
+% wrapper around proplists:get_value() to check for missing stuff
+get_cfg_pl_val(Name, List) ->
+	case proplists:get_value(Name, List) of
 	    undefined ->
 		error_logger:error_report([{error, app_cfg_missing},
-					   {get_app_config, Name}]),
-		throw(app_cfg_missing);
-	    {ok, Val} ->
+					   {get_cfg_pl_val, Name}]);
+	    Val ->
 		Val
 	end.

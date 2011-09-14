@@ -14,5 +14,4 @@ stop(_State) ->
 
 reload_config() ->
 	osmo_util:reload_config(),
-	mgw_nat_usr:reload_config(),
-	map_masq:config_update().
+	mgw_nat_adm:reload_config().

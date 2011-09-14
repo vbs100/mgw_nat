@@ -27,7 +27,33 @@
 start_link() ->
 	supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-init(Args) ->
-	MgwChild = {mgw_nat_usr, {mgw_nat_usr, start_link, [Args]},
+init(_Args) ->
+	sccp_masq:init(),
+	map_masq:config_update(),
+	SignLinkList = get_app_config(sign_links),
+	ChildList = gen_child_list(SignLinkList),
+	AdmChild = {mgw_nat_adm, {mgw_nat_adm, start_link, [foo]},
+		    permanent, 2000, worker, [mgw_nat_usr, sctp_handler,
+					      mgw_nat, mgw_nat_adm]},
+	{ok,{{one_for_one,60,600}, [AdmChild|ChildList]}}.
+
+% generate a list of child specifications, one for each signalling link
+gen_child_list(SignLinkList) ->
+	gen_child_list(SignLinkList, []).
+gen_child_list([], ChildList) ->
+	ChildList;
+gen_child_list([Link|Tail], ChildList) ->
+	{Name, ChildArgs} = Link,
+	NewChild = {Name, {mgw_nat_usr, start_link, [[{msc_name, Name}|ChildArgs]]},
 		    permanent, 2000, worker, [mgw_nat_usr, sctp_handler, mgw_nat]},
-	{ok,{{one_for_all,60,600}, [MgwChild]}}.
+	gen_child_list(Tail, [NewChild|ChildList]).
+
+get_app_config(Name) ->
+	case application:get_env(Name) of
+	    undefined ->
+		error_logger:error_report([{error, app_cfg_missing},
+					   {get_app_config, Name}]),
+		throw(app_cfg_missing);
+	    {ok, Val} ->
+		Val
+	end.
