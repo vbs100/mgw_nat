@@ -118,7 +118,18 @@ handle_sctp(L = #loop_data{msc_sock=MscSock, msc_remote_ip=MscRemoteIp, msc_remo
 			% maybe we should simply die?
 			NewL = L,
 			io:format("SCTP remote ~p shutdown~n", [RemoteIp]),
-			exit(ctp_remote_shutdown);
+			exit(sctp_remote_shutdown);
+		{sctp, _Sock, RemoteIp, _RemotePort, {_Anc, Data}}
+					when is_record(Data, sctp_paddr_change) ->
+			case Data#sctp_paddr_change.state of
+				addr_unreachable ->
+					io:format("SCTP remote ~p unreachable~n",
+						  [RemoteIp]),
+					exit(sctp_addr_unreachable);
+				_ ->
+					ok
+			end,
+			NewL = L;
 		Other ->
 			io:format("OTHER ~p~n", [Other]),
 			NewL = L
