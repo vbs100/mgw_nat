@@ -47,7 +47,7 @@ init(Params) ->
 	RewriteActMod:reload_config(),
 	SctpHdlrArgs =	[MscLocalIp, MscLocalPort, MscRemoteIp,
 			 StpRemoteIp, StpRemotePort, RewriteActMod],
-	LoopDat = apply(sctp_handler, init, SctpHdlrArgs),
+	{ok, LoopDat} = apply(sctp_handler, init, SctpHdlrArgs),
 	{ok, {Params, LoopDat}}.
 
 % this cast is produced by mgw_nat_sup child walker
