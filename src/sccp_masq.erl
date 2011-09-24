@@ -133,9 +133,9 @@ sccp_masq_msg(_From, _MsgType, Msg) ->
 	Msg.
 
 init() ->
-	Orig = ets:new(sccp_masq_orig, [ordered_set,
+	Orig = ets:new(sccp_masq_orig, [ordered_set, public,
 					{keypos, #sccp_masq_rec.digits_in}]),
-	Rev  = ets:new(sccp_masq_rev, [ordered_set,
+	Rev  = ets:new(sccp_masq_rev, [ordered_set, public,
 					{keypos, #sccp_masq_rec.digits_in}]),
 	application:set_env(mgw_nat, sccp_masq_orig, Orig),
 	application:set_env(mgw_nat, sccp_masq_rev, Rev),
