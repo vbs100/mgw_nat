@@ -1,3 +1,9 @@
 *.beam
 ebin/*.script
 ebin/*.boot
+ebin/*.rel
+ebin/*.tar.gz
+rel
+deps
+.eunit
+erl_crash.dump
