@@ -61,7 +61,7 @@ setup() ->
 	mgw_nat_act_vfuk_onw:reload_config().
 
 teardown(_) ->
-	application:unset_env(undefined, camel_phase_patch_table).
+	application:unset_env(mgw_nat, camel_phase_patch_table).
 
 % Test the tuple walker and camelph_twalk_cb() directly, as we don't have a
 % SCCP header in front of the MAP message and thus we cannot call
