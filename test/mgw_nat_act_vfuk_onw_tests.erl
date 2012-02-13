@@ -10,53 +10,45 @@
 
 
 -define(MAP_DEC_IN, {'begin',
-                  {'MapSpecificPDUs_begin',
-                   [81,1,2,200],
-                   {'EXTERNAL',
-                    {syntax,{0,0,17,773,1,1,1}},
-                    asn1_NOVALUE,
-                    [96,15,128,2,7,128,161,9,6,7,4,0,0,1,0,1,3]},
-                   [{basicROS,
-                     {invoke,
-                      {'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke',
-                       {present,64},
-                       asn1_NOVALUE,
-                       {local,2},
-                       {'UpdateLocationArg',
-                        [50,20,149,112,8,100,119,248],
-                        [145,83,132,9,0,7],
-                        [145,83,132,9,0,23],
-                        asn1_NOVALUE,asn1_NOVALUE,
-                        {'VLR-Capability',
-                         [phase1,phase2,phase3],
-                         asn1_NOVALUE,asn1_NOVALUE,asn1_NOVALUE,asn1_NOVALUE,
-                         asn1_NOVALUE,asn1_NOVALUE,asn1_NOVALUE},
-                        asn1_NOVALUE,asn1_NOVALUE,asn1_NOVALUE,
-                        asn1_NOVALUE}}}}]}}).
+		#'MapSpecificPDUs_begin'{
+		   otid = [81,1,2,200],
+		   dialoguePortion = {'EXTERNAL', {syntax,{0,0,17,773,1,1,1}}, asn1_NOVALUE,
+				      [96,15,128,2,7,128,161,9,6,7,4,0,0,1,0,1,3]},
+		   components = [{basicROS,
+		     {invoke, #'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke'{
+		       invokeId = {present,64},
+		       linkedId = asn1_NOVALUE,
+		       opcode = {local,2},
+		       argument = #'UpdateLocationArg'{
+			 imsi = [50,20,149,112,8,100,119,248],
+			 'msc-Number' = [145,83,132,9,0,7],
+			 'vlr-Number' = [145,83,132,9,0,23],
+			 'vlr-Capability' = #'VLR-Capability'{
+				supportedCamelPhases = [phase1, phase2, phase3],
+				_ = asn1_NOVALUE},
+			  _ = asn1_NOVALUE},
+			_ = asn1_NOVALUE}}}]
+		}}).
 -define(MAP_DEC_OUT, {'begin',
-                  {'MapSpecificPDUs_begin',
-                   [81,1,2,200],
-                   {'EXTERNAL',
-                    {syntax,{0,0,17,773,1,1,1}},
-                    asn1_NOVALUE,
-                    [96,15,128,2,7,128,161,9,6,7,4,0,0,1,0,1,3]},
-                   [{basicROS,
-                     {invoke,
-                      {'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke',
-                       {present,64},
-                       asn1_NOVALUE,
-                       {local,2},
-                       {'UpdateLocationArg',
-                        [50,20,149,112,8,100,119,248],
-                        [145,83,132,9,0,7],
-                        [145,83,132,9,0,23],
-                        asn1_NOVALUE,asn1_NOVALUE,
-                        {'VLR-Capability',
-                         [phase1],
-                         asn1_NOVALUE,asn1_NOVALUE,asn1_NOVALUE,asn1_NOVALUE,
-                         asn1_NOVALUE,asn1_NOVALUE,asn1_NOVALUE},
-                        asn1_NOVALUE,asn1_NOVALUE,asn1_NOVALUE,
-                        asn1_NOVALUE}}}}]}}).
+		#'MapSpecificPDUs_begin'{
+		   otid = [81,1,2,200],
+		   dialoguePortion = {'EXTERNAL', {syntax,{0,0,17,773,1,1,1}}, asn1_NOVALUE,
+				      [96,15,128,2,7,128,161,9,6,7,4,0,0,1,0,1,3]},
+		   components = [{basicROS,
+		     {invoke, #'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke'{
+		       invokeId = {present,64},
+		       linkedId = asn1_NOVALUE,
+		       opcode = {local,2},
+		       argument = #'UpdateLocationArg'{
+			 imsi = [50,20,149,112,8,100,119,248],
+			 'msc-Number' = [145,83,132,9,0,7],
+			 'vlr-Number' = [145,83,132,9,0,23],
+			 'vlr-Capability' = #'VLR-Capability'{
+				supportedCamelPhases = [phase1],
+				_ = asn1_NOVALUE},
+			 _ = asn1_NOVALUE},
+		      _ = asn1_NOVALUE}}}]
+	}}).
 
 setup() ->
 	application:set_env(mgw_nat, camel_phase_patch_table, [
