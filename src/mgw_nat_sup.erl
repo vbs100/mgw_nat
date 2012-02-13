@@ -49,7 +49,7 @@ gen_child_list([Link|Tail], ChildList) ->
 	gen_child_list(Tail, [NewChild|ChildList]).
 
 get_app_config(Name) ->
-	case application:get_env(Name) of
+	case application:get_env(mgw_nat, Name) of
 	    undefined ->
 		error_logger:error_report([{error, app_cfg_missing},
 					   {get_app_config, Name}]),

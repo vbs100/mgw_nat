@@ -33,16 +33,16 @@
 
 % alloc + insert a new masquerade state record in our tables
 masq_alloc(DigitsOrig) ->
-	{ok, Base} = application:get_env(sccp_masq_gt_base),
-	{ok, Max} = application:get_env(sccp_masq_gt_max),
+	{ok, Base} = application:get_env(mgw_nat, sccp_masq_gt_base),
+	{ok, Max} = application:get_env(mgw_nat, sccp_masq_gt_max),
 	masq_try_alloc(DigitsOrig, Base, Max, 0).
 masq_try_alloc(_DigitsOrig, _Base, Max, Offset) when Offset > Max ->
 	undef;
 masq_try_alloc(DigitsOrig, Base, Max, Offset) ->
 	Try = Base + Offset,
 	TryBin = osmo_util:int2digit_list(Try),
-	{ok, RevTbl} = application:get_env(sccp_masq_rev),
-	{ok, OrigTbl} = application:get_env(sccp_masq_orig),
+	{ok, RevTbl} = application:get_env(mgw_nat, sccp_masq_rev),
+	{ok, OrigTbl} = application:get_env(mgw_nat, sccp_masq_orig),
 	% try to first allocate the reverse mapping, i.e. where the new
 	% masqueraded address is the unique criteria for table lookup
 	EtsRet = ets:insert_new(RevTbl,
@@ -60,7 +60,7 @@ masq_try_alloc(DigitsOrig, Base, Max, Offset) ->
 
 % lookup a masqerade state record
 lookup_masq_addr(orig, GtDigits) ->
-	{ok, OrigTbl} = application:get_env(sccp_masq_orig),
+	{ok, OrigTbl} = application:get_env(mgw_nat, sccp_masq_orig),
 	case ets:lookup(OrigTbl, GtDigits) of
 		[#sccp_masq_rec{digits_out = DigitsOut}] ->
 			DigitsOut;
@@ -69,7 +69,7 @@ lookup_masq_addr(orig, GtDigits) ->
 			undef
 	end;
 lookup_masq_addr(rev, GtDigits) ->
-	{ok, RevTbl} = application:get_env(sccp_masq_rev),
+	{ok, RevTbl} = application:get_env(mgw_nat, sccp_masq_rev),
 	case ets:lookup(RevTbl, GtDigits) of
 		[#sccp_masq_rec{digits_out = DigitsOut}] ->
 			DigitsOut;
@@ -143,14 +143,14 @@ init() ->
 
 reset() ->
 	io:format("SCCP MASQ: Deleting all MASQ state records~n"),
-	{ok, OrigTbl} = application:get_env(sccp_masq_orig),
-	{ok, RevTbl} = application:get_env(sccp_masq_rev),
+	{ok, OrigTbl} = application:get_env(mgw_nat, sccp_masq_orig),
+	{ok, RevTbl} = application:get_env(mgw_nat, sccp_masq_rev),
 	ets:delete_all_objects(OrigTbl),
 	ets:delete_all_objects(RevTbl).
 
 dump() ->
-	{ok, OrigTbl} = application:get_env(sccp_masq_orig),
-	{ok, RevTbl} = application:get_env(sccp_masq_rev),
+	{ok, OrigTbl} = application:get_env(mgw_nat, sccp_masq_orig),
+	{ok, RevTbl} = application:get_env(mgw_nat, sccp_masq_rev),
 	ListOrig = ets:tab2list(OrigTbl),
 	ListRev = ets:tab2list(RevTbl),
 	io:format("SCCP MASQ Table Dump (ORIGINAL)~n"),
