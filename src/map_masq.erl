@@ -36,8 +36,8 @@ patch_map_isdn_addr(From, AddrIn, Type) when is_binary(AddrIn) ->
 	patch_map_isdn_addr(From, binary_to_list(AddrIn), Type);
 patch_map_isdn_addr(From, AddrIn, Type) when is_list(AddrIn) ->
 	% obtain some configuration data
-	{ok, Tbl} = application:get_env(map_rewrite_table),
-	{ok, IntPfx} = application:get_env(intern_pfx),
+	{ok, Tbl} = application:get_env(mgw_nat, map_rewrite_table),
+	{ok, IntPfx} = application:get_env(mgw_nat, intern_pfx),
 	% Decode the list of octets into an party_number
 	AddrInDec = map_codec:parse_addr_string(AddrIn),
 	% First we always internationalize the address
@@ -71,7 +71,7 @@ patch_map_isdn_digits(From, AddrIn, TypeIn, [Head|Tail]) ->
 	end.
 
 mangle_msisdn(from_stp, _Opcode, AddrIn) ->
-	{ok, IntPfx} = application:get_env(intern_pfx),
+	{ok, IntPfx} = application:get_env(mgw_nat, intern_pfx),
 	mgw_nat:isup_party_internationalize(AddrIn, IntPfx).
 
 % Someobdy inquires on Routing Info for a MS (from HLR)
@@ -133,8 +133,8 @@ patch(From, #'LocationInfoWithLMSI'{'networkNode-Number' = NetNodeNr} = P) ->
 patch(_From, {roamingNumber, RoamNumTBCD}) ->
 	RoamNumIn = map_codec:parse_addr_string(RoamNumTBCD),
 	io:format("Roaming Number IN = ~p~n", [RoamNumIn]),
-	{ok, MsrnPfxStp} = application:get_env(msrn_pfx_stp),
-	{ok, MsrnPfxMsc} = application:get_env(msrn_pfx_msc),
+	{ok, MsrnPfxStp} = application:get_env(mgw_nat, msrn_pfx_stp),
+	{ok, MsrnPfxMsc} = application:get_env(mgw_nat, msrn_pfx_msc),
 	RoamNumOut = mgw_nat:isup_party_replace_prefix(RoamNumIn, MsrnPfxMsc, MsrnPfxStp),
 	io:format("Roaming Number OUT = ~p~n", [RoamNumOut]),
 	RoamNumOutTBCD = map_codec:encode_addr_string(RoamNumOut),
@@ -456,9 +456,9 @@ config_update() ->
 	{ok, MapRewriteTbl} = application:get_env(mgw_nat, map_rewrite_table),
 	MapRewriteTblOut = generate_rewrite_table(MapRewriteTbl),
 	application:set_env(mgw_nat, map_rewrite_table, MapRewriteTblOut),
-	%{ok, MsrnPfxStp} = application:get_env(msrn_pfx_stp),
-	%{ok, MsrnPfxMsc} = application:get_env(msrn_pfx_msc),
-	%{ok, IntPfx} = application:get_env(intern_pfx),
+	%{ok, MsrnPfxStp} = application:get_env(mgw_nat, msrn_pfx_stp),
+	%{ok, MsrnPfxMsc} = application:get_env(mgw_nat, msrn_pfx_msc),
+	%{ok, IntPfx} = application:get_env(mgw_nat, intern_pfx),
 	ok.
 
 % Generate the full MAP address rewrite table
