@@ -1,7 +1,7 @@
 % MAP masquerading application
 
-% (C) 2010-2011 by Harald Welte <laforge@gnumonks.org>
-% (C) 2010-2011 by On-Waves
+% (C) 2010-2012 by Harald Welte <laforge@gnumonks.org>
+% (C) 2010-2012 by On-Waves
 %
 % All Rights Reserved
 %
@@ -123,8 +123,10 @@ patch(From, {routingInfo, RI}) ->
 	{routingInfo, patch(From, RI)};
 
 % HLR responds to inquiring MSC indicating the current serving MSC number
-patch(From, #'RoutingInfoForSM-Res'{locationInfoWithLMSI = LocInf} = P) ->
-	P#'RoutingInfoForSM-Res'{locationInfoWithLMSI = patch(From, LocInf)};
+patch(From, #'RoutingInfoForSM-Res'{locationInfoWithLMSI = LocInf,
+				    imsi = Imsi} = P) ->
+	P#'RoutingInfoForSM-Res'{locationInfoWithLMSI = patch(From, LocInf),
+				 imsi = patch_imsi(sri_sm_res, From, Imsi)};
 patch(From, #'LocationInfoWithLMSI'{'networkNode-Number' = NetNodeNr} = P) ->
 	NetNodeNrOut = patch_map_isdn_addr(From, NetNodeNr, msc),
 	P#'LocationInfoWithLMSI'{'networkNode-Number' = NetNodeNrOut};
@@ -456,6 +458,18 @@ config_update() ->
 	{ok, MapRewriteTbl} = application:get_env(mgw_nat, map_rewrite_table),
 	MapRewriteTblOut = generate_rewrite_table(MapRewriteTbl),
 	application:set_env(mgw_nat, map_rewrite_table, MapRewriteTblOut),
+	% (re-)generate IMSI tree from text file
+	case application:get_env(mgw_nat, imsi_rewrite_file) of
+		{ok, ImsiListFile} ->
+			{ok, ImsiTree} = imsi_list:read_file(ImsiListFile),
+			{ok, OldPrefix} = application:get_env(mgw_nat, imsi_rewrite_old_prefix),
+			{ok, NewPrefix} = application:get_env(mgw_nat, imsi_rewrite_new_prefix),
+			io:format("(Re)generated IMSI rewrite table: ~p entries, ~p -> ~p~n",
+				  [gb_trees:size(ImsiTree), OldPrefix, NewPrefix]),
+			application:set_env(mgw_nat, imsi_rewrite_tree, {ImsiTree, OldPrefix, NewPrefix});
+		_ ->
+			ok
+	end,
 	%{ok, MsrnPfxStp} = application:get_env(msrn_pfx_stp),
 	%{ok, MsrnPfxMsc} = application:get_env(msrn_pfx_msc),
 	%{ok, IntPfx} = application:get_env(intern_pfx),
@@ -479,3 +493,33 @@ generate_rewrite_entry({Name, MscSideInt, StpSideInt}) ->
 	MscSideList = osmo_util:int2digit_list(MscSideInt),
 	StpSideList = osmo_util:int2digit_list(StpSideInt),
 	{Name, MscSideInt, StpSideInt, MscSideList, StpSideList}.
+
+
+% check if we need to rewrite the IMSI
+patch_imsi(sri_sm_res, from_msc, ImsiIn) ->
+	case application:get_env(mgw_nat, imsi_rewrite_tree) of
+		{ok, {ImsiTree, OldPrefix, NewPrefix}} ->
+			% decode IMSI into list of digits
+			Imsi = map_codec:parse_map_addr(ImsiIn),
+			% rewrite prefix, if it matches
+			case imsi_list:match_imsi(ImsiTree, Imsi) of
+				true ->
+					NewImsi = prefix_rewrite(OldPrefix, NewPrefix, Imsi),
+					map_codec:encode_map_tbcd(NewImsi);
+				false ->
+					ImsiIn
+			end;
+		_ ->
+			ImsiIn
+	end;
+patch_imsi(_, _, Imsi) ->
+	Imsi.
+
+prefix_rewrite(OldPrefix, NewPrefix, Imsi) when is_list(OldPrefix), is_list(NewPrefix), is_list(Imsi) ->
+	case lists:sublist(Imsi, length(OldPrefix)) of
+		OldPrefix ->
+			% remove old prefix and prepend new prefix
+			NewPrefix ++ lists:sublist(Imsi, length(OldPrefix)+1, length(Imsi));
+		_ ->
+			Imsi
+	end.
