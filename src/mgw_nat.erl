@@ -255,17 +255,17 @@ mangle_isup_number(from_msc, MsgT, NumType, PartyNum) when MsgT == ?ISUP_MSGT_CO
 			{ok, MsrnPfxMsc} = application:get_env(mgw_nat, msrn_pfx_msc),
 			io:format("CON MSRN rewrite (MSC->STP): "),
 			Num1 = isup_party_replace_prefix(PartyNum, MsrnPfxStp, MsrnPfxMsc),
-			% Second: convert to national number, if it is international
-			isup_party_nationalize(Num1, InternPfx);
+			% Second: convert to international number, if it is national
+			isup_party_internationalize(Num1, InternPfx);
 		_ ->
 			PartyNum
 	end;
-% MAC->STP: Mangle IAM international -> national
+% MAC->STP: Mangle IAM national -> international
 mangle_isup_number(from_msc, ?ISUP_MSGT_IAM, NumType, PartyNum) ->
 	case NumType of
 		?ISUP_PAR_CALLED_P_NUM ->
 			{ok, InternPfx} = application:get_env(mgw_nat, intern_pfx),
-			isup_party_nationalize(PartyNum, InternPfx);
+			isup_party_internationalize(PartyNum, InternPfx);
 		_ ->
 			PartyNum
 	end;
