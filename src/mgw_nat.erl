@@ -283,6 +283,10 @@ mangle_isup_number(from_stp, MsgT, NumType, PartyNum) when MsgT == ?ISUP_MSGT_CO
 mangle_isup_number(from_msc, _, _, PartyNum) ->
 	PartyNum.
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% low-level number manipulation routines
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 % replace the prefix of PartyNum with NewPfx _if_ the current prefix matches MatchPfx
 isup_party_replace_prefix(PartyNum, MatchPfxInt, NewPfxInt) ->
 	DigitsIn = PartyNum#party_number.phone_number,
@@ -300,6 +304,9 @@ isup_party_replace_prefix(PartyNum, MatchPfxInt, NewPfxInt) ->
 	end,
 	PartyNum#party_number{phone_number = DigitsOut}.
 
+% ensure the number is in international format. If it is national, add
+% CountryCodeInt and switch type to international.  If it's already
+% national, just leave it at that.
 isup_party_internationalize(PartyNum, CountryCodeInt) ->
 	#party_number{phone_number = DigitsIn, nature_of_addr_ind = Nature} = PartyNum,
 	CountryCode = osmo_util:int2digit_list(CountryCodeInt),
@@ -335,6 +342,10 @@ isup_party_nat00_internationalize(PartyNum) ->
 	end,
 	PartyNum#party_number{phone_number = DigitsOut, nature_of_addr_ind = NatureOut}.
 
+% ensure that the resulting number is in national format.  If the input
+% is national, there is no change.  If the input is international, _and_
+% the country code equals CountryCodeInt, strip the CC and convert to
+% national.
 isup_party_nationalize(PartyNum, CountryCodeInt) ->
 	#party_number{phone_number = DigitsIn, nature_of_addr_ind = Nature} = PartyNum,
 	CountryCode = osmo_util:int2digit_list(CountryCodeInt),
