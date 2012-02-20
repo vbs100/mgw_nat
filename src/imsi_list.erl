@@ -35,6 +35,10 @@ chomp(Line) when is_list(Line) ->
 			Line
 	end.
 
+% convert from "12345" to [1,2,3,4,5]
+string_num_to_int_list(Line2) ->
+	[case string:to_integer([X]) of {Int,[]} -> Int end || X <- Line2].
+
 lines2tree(Iodev, Tree) ->
 	case file:read_line(Iodev) of
 		eof ->
@@ -46,8 +50,14 @@ lines2tree(Iodev, Tree) ->
 		{ok, Line} ->
 			% FIXME: convert to digit list
 			Line2 = chomp(Line),
-			Line3 = [case string:to_integer([X]) of {Int,[]} -> Int end || X <- Line2],
-			lines2tree(Iodev, gb_trees:insert(Line3, true, Tree))
+			case string:tokens(Line2, ",;") of
+				[ImsiOldStr, ImsiNewStr] ->
+					ImsiOld = string_num_to_int_list(ImsiOldStr),
+					ImsiNew = string_num_to_int_list(ImsiNewStr),
+					lines2tree(Iodev, gb_trees:insert(ImsiOld, ImsiNew, Tree));
+				_ ->
+					{error, file_format}
+			end
 	end.
 
 
@@ -65,15 +75,13 @@ read_list(List) when is_list(List) ->
 
 read_list([], Tree) ->
 	Tree;
-read_list([Head|Tail], Tree) ->
-	read_list(Tail, gb_trees:enter(Head, true, Tree)).
+read_list([{Old, New}|Tail], Tree) ->
+	read_list(Tail, gb_trees:enter(Old, New, Tree)).
 
 match_imsi(Tree, Imsi) when is_list(Imsi) ->
 	case gb_trees:lookup(Imsi, Tree) of
-		{value, true} ->
-			true;
-		{value, _} ->
-			false;
+		{value, ImsiNew} ->
+			{ok, ImsiNew};
 		none ->
-			false
+			{error, no_entry}
 	end.

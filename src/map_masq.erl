@@ -462,11 +462,9 @@ config_update() ->
 	case application:get_env(mgw_nat, imsi_rewrite_file) of
 		{ok, ImsiListFile} ->
 			{ok, ImsiTree} = imsi_list:read_file(ImsiListFile),
-			{ok, OldPrefix} = application:get_env(mgw_nat, imsi_rewrite_old_prefix),
-			{ok, NewPrefix} = application:get_env(mgw_nat, imsi_rewrite_new_prefix),
-			io:format("(Re)generated IMSI rewrite table: ~p entries, ~p -> ~p~n",
-				  [gb_trees:size(ImsiTree), OldPrefix, NewPrefix]),
-			application:set_env(mgw_nat, imsi_rewrite_tree, {ImsiTree, OldPrefix, NewPrefix});
+			io:format("(Re)generated IMSI rewrite table: ~p entries~n",
+				  [gb_trees:size(ImsiTree)]),
+			application:set_env(mgw_nat, imsi_rewrite_tree, ImsiTree);
 		_ ->
 			ok
 	end,
@@ -498,15 +496,14 @@ generate_rewrite_entry({Name, MscSideInt, StpSideInt}) ->
 % check if we need to rewrite the IMSI
 patch_imsi(sri_sm_res, from_msc, ImsiIn) ->
 	case application:get_env(mgw_nat, imsi_rewrite_tree) of
-		{ok, {ImsiTree, OldPrefix, NewPrefix}} ->
+		{ok, ImsiTree} ->
 			% decode IMSI into list of digits
 			Imsi = map_codec:parse_map_addr(ImsiIn),
 			% rewrite prefix, if it matches
 			case imsi_list:match_imsi(ImsiTree, Imsi) of
-				true ->
-					NewImsi = prefix_rewrite(OldPrefix, NewPrefix, Imsi),
+				{ok, NewImsi} ->
 					map_codec:encode_map_tbcd(NewImsi);
-				false ->
+				_ ->
 					ImsiIn
 			end;
 		_ ->
@@ -514,12 +511,3 @@ patch_imsi(sri_sm_res, from_msc, ImsiIn) ->
 	end;
 patch_imsi(_, _, Imsi) ->
 	Imsi.
-
-prefix_rewrite(OldPrefix, NewPrefix, Imsi) when is_list(OldPrefix), is_list(NewPrefix), is_list(Imsi) ->
-	case lists:sublist(Imsi, length(OldPrefix)) of
-		OldPrefix ->
-			% remove old prefix and prepend new prefix
-			NewPrefix ++ lists:sublist(Imsi, length(OldPrefix)+1, length(Imsi));
-		_ ->
-			Imsi
-	end.
