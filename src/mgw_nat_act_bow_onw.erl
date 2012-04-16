@@ -17,6 +17,21 @@
 %
 % You should have received a copy of the GNU Affero General Public License
 % along with this program.  If not, see <http://www.gnu.org/licenses/>.
+%
+% Additional Permission under GNU AGPL version 3 section 7:
+%
+% If you modify this Program, or any covered work, by linking or
+% combining it with runtime libraries of Erlang/OTP as released by
+% Ericsson on http://www.erlang.org (or a modified version of these
+% libraries), containing parts covered by the terms of the Erlang Public
+% License (http://www.erlang.org/EPLICENSE), the licensors of this
+% Program grant you additional permission to convey the resulting work
+% without the need to license the runtime libraries of Erlang/OTP under
+% the GNU Affero General Public License. Corresponding Source for a
+% non-source form of such a combination shall include the source code
+% for the parts of the runtime libraries of Erlang/OTP used as well as
+% that of the covered work.
+
 
 -module(mgw_nat_act_bow_onw).
 -author("Harald Welte <laforge@gnumonks.org>").
@@ -27,14 +42,7 @@
 
 % Rewrite at SCTP (root) level:
 rewrite_actor(sctp, From, Path, 2, DataBin) ->
-	try mgw_nat:mangle_rx_data(From, Path, DataBin, fun rewrite_actor/5) of
-		Val ->
-			Val
-	catch error:Error ->
-		% some parser error, simply forward msg unmodified
-		io:format("MGW NAT mangling Error: ~p~n", [Error]),
-		DataBin
-	end;
+	mgw_nat:mangle_rx_data(From, Path, DataBin, fun rewrite_actor/5);
 
 % Rewrite at ISUP level:
 rewrite_actor(isup, From, Path, MsgType, IsupDec) ->
