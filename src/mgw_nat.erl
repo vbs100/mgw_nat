@@ -57,7 +57,7 @@ mangle_rx_data(From, Path, Data, Fn) when is_list(Path), is_binary(Data) ->
 	m2ua_codec:encode_m2ua_msg(M2ua_out).
 
 % mangle the received M2UA
-mangle_rx_m2ua_maup(Fn, From, Path, M2ua = #xua_msg{parameters = Params}) ->
+mangle_rx_m2ua_maup(Fn, From, Path, M2ua = #xua_msg{payload = Params}) ->
 	{_Len, M2uaPayload} = proplists:get_value(16#300, Params),
 	Mtp3 = mtp3_codec:parse_mtp3_msg(M2uaPayload),
 	%io:format("MTP3 Decode: ~p~n", [Mtp3]),
@@ -67,7 +67,7 @@ mangle_rx_m2ua_maup(Fn, From, Path, M2ua = #xua_msg{parameters = Params}) ->
 	Params2 = proplists:delete(16#300, Params),
 	ParamsNew = Params2 ++ [{16#300, {byte_size(Mtp3OutBin), Mtp3OutBin}}],
 	% return mangled parsed m2ua msg
-	M2ua#xua_msg{parameters = ParamsNew}.
+	M2ua#xua_msg{payload = ParamsNew}.
 
 % mangle the MTP3 payload
 mangle_rx_mtp3(Fn, From, Path, Mtp3 = #mtp3_msg{service_ind = Service}) ->
