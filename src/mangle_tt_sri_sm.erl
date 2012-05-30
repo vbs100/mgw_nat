@@ -166,21 +166,25 @@ check_for_tcap_op(Comp, Op, MapDec) ->
 mangle_tt_sri_sm(from_msc, _Path, ?SCCP_MSGT_UDT, SccpDec = #sccp_msg{parameters=Opts}) ->
 	CalledParty = proplists:get_value(called_party_addr, Opts),
 	CalledGT = CalledParty#sccp_addr.global_title,
-	{ok, PrefixList} = application:get_env(mgw_nat, mangle_tt_sri_sm_pfx),
-	case gt_match_pfx_list(CalledGT, PrefixList) of
-		true ->
+	case application:get_env(mgw_nat, mangle_tt_sri_sm_pfx) of
+	    {ok, PrefixList} ->
+		case gt_match_pfx_list(CalledGT, PrefixList) of
+		    true ->
 			case check_for_invoke_sri_sm(SccpDec) of
-				true ->
-					CalledGTNew = CalledGT#global_title{trans_type = 3},
-					CalledPartyNew = CalledParty#sccp_addr{global_title = CalledGTNew},
-					ParamsOut = lists:keyreplace(called_party_addr, 1, Opts,
-								     {called_party_addr, CalledPartyNew}),
-					SccpDec#sccp_msg{parameters=ParamsOut};
-				_ ->
-					SccpDec
+			    true ->
+				CalledGTNew = CalledGT#global_title{trans_type = 3},
+				CalledPartyNew = CalledParty#sccp_addr{global_title = CalledGTNew},
+				ParamsOut = lists:keyreplace(called_party_addr, 1, Opts,
+							     {called_party_addr, CalledPartyNew}),
+				SccpDec#sccp_msg{parameters=ParamsOut};
+			    _ ->
+				SccpDec
 			end;
-		_ ->
+		    _ ->
 			SccpDec
+		end;
+	    _ ->
+		SccpDec
 	end;
 mangle_tt_sri_sm(_, _, _, SccpIn) ->
 	SccpIn.
