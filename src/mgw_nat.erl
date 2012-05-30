@@ -34,6 +34,7 @@
 %-include_lib("kernel/include/inet.hrl").
 %-include_lib("kernel/include/inet_sctp.hrl").
 
+-include_lib("osmo_ss7/include/xua.hrl").
 -include_lib("osmo_ss7/include/m2ua.hrl").
 -include_lib("osmo_ss7/include/mtp3.hrl").
 -include_lib("osmo_ss7/include/isup.hrl").
