@@ -55,6 +55,10 @@ rewrite_actor(sctp, From, Path, 2, DataBin) ->
 		DataBin
 	end;
 
+% Rewrite at SCCP level: call into mangle_tt_sri_sm
+rewrite_actor(sccp, from_msc, Path, SccpType, SccpDec) ->
+	mangle_tt_sri_sm:mangle_tt_sri_sm(from_msc, Path, SccpType, SccpDec);
+
 % Rewrite at MAP level: call into map_masq module
 rewrite_actor(map, From, Path, 0, MapDec) ->
 	mangle_map_camel_phase(From, Path, MapDec);

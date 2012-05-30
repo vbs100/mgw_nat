@@ -58,9 +58,11 @@ setup() ->
 			{ [ {gt_range_from,	443850000000000 },
 			    {gt_range_to,	443859999999999 } ], [ phase1 ] }
 	]),
+	application:set_env(mgw_nat, mangle_tt_sri_sm_pfx, [ 91 ]),
 	mgw_nat_act_vfuk_onw:reload_config().
 
 teardown(_) ->
+	application:unset_env(mgw_nat, mangle_tt_sri_sm_pfx),
 	application:unset_env(mgw_nat, camel_phase_patch_table).
 
 % Test the tuple walker and camelph_twalk_cb() directly, as we don't have a
