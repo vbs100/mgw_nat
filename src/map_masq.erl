@@ -145,7 +145,7 @@ patch(From, #'LocationInfoWithLMSI'{'networkNode-Number' = NetNodeNr} = P) ->
 
 % MO-ForwardSM-Arg with optional IMSI
 patch(From, #'MO-ForwardSM-Arg'{imsi = ImsiIn} = P) ->
-	#'MO-ForwardSM-Arg'{imsi = patch_imsi(mo_fw_sm_arg, From, ImsiIn)};
+	P#'MO-ForwardSM-Arg'{imsi = patch_imsi(mo_fw_sm_arg, From, ImsiIn)};
 
 % patch the roaming number as it is sent from HLR to G-MSC (SRI Resp)
 patch(_From, {roamingNumber, RoamNumTBCD}) ->
