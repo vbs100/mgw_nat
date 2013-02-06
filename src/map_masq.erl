@@ -1,7 +1,7 @@
 % MAP masquerading application
 
-% (C) 2010-2012 by Harald Welte <laforge@gnumonks.org>
-% (C) 2010-2012 by On-Waves
+% (C) 2010-2013 by Harald Welte <laforge@gnumonks.org>
+% (C) 2010-2013 by On-Waves
 %
 % All Rights Reserved
 %
@@ -142,6 +142,10 @@ patch(From, #'RoutingInfoForSM-Res'{locationInfoWithLMSI = LocInf,
 patch(From, #'LocationInfoWithLMSI'{'networkNode-Number' = NetNodeNr} = P) ->
 	NetNodeNrOut = patch_map_isdn_addr(From, NetNodeNr, msc),
 	P#'LocationInfoWithLMSI'{'networkNode-Number' = NetNodeNrOut};
+
+% MO-ForwardSM-Arg with optional IMSI
+patch(From, #'MO-ForwardSM-Arg'{imsi = ImsiIn} = P) ->
+	#'MO-ForwardSM-Arg'{imsi = patch_imsi(mo_fw_sm_arg, From, ImsiIn)};
 
 % patch the roaming number as it is sent from HLR to G-MSC (SRI Resp)
 patch(_From, {roamingNumber, RoamNumTBCD}) ->
@@ -504,15 +508,20 @@ generate_rewrite_entry({Name, MscSideInt, StpSideInt}) ->
 	StpSideList = osmo_util:int2digit_list(StpSideInt),
 	{Name, MscSideInt, StpSideInt, MscSideList, StpSideList}.
 
+imsi_direction(sri_sm_res) ->
+	forward;
+imsi_direction(mo_fw_sm_arg) ->
+	reverse.
 
 % check if we need to rewrite the IMSI
-patch_imsi(sri_sm_res, from_msc, ImsiIn) ->
+patch_imsi(MsgType, from_msc, ImsiIn) ->
+	IsForward = imsi_direction(MsgType),
 	case application:get_env(mgw_nat, imsi_rewrite_tree) of
 		{ok, ImsiTree} ->
 			% decode IMSI into list of digits
 			Imsi = map_codec:parse_map_addr(ImsiIn),
 			% rewrite prefix, if it matches
-			case imsi_list:match_imsi(ImsiTree, Imsi) of
+			case imsi_list:match_imsi(IsForward, ImsiTree, Imsi) of
 				{ok, NewImsi} ->
 					map_codec:encode_map_tbcd(NewImsi);
 				_ ->
