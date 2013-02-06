@@ -35,7 +35,8 @@
 -module(imsi_list).
 -author('Harald Welte <laforge@gnumonks.org>').
 
--export([read_file/1, read_list/1, match_imsi/2, match_imsi/3]).
+-export([read_file/1, read_list/1, match_imsi/2, match_imsi/3,
+	 num_entries/1]).
 
 -record(state, {forward, reverse}).
 
@@ -128,3 +129,6 @@ match_imsi(reverse, State, Imsi) when is_list(Imsi) ->
 		none ->
 			{error, no_entry}
 	end.
+
+num_entries(State) when is_record(State, state) ->
+	gb_trees:size(State#state.forward).

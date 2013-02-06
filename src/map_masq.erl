@@ -479,7 +479,7 @@ config_update() ->
 		{ok, ImsiListFile} ->
 			{ok, ImsiTree} = imsi_list:read_file(ImsiListFile),
 			io:format("(Re)generated IMSI rewrite table: ~p entries~n",
-				  [gb_trees:size(ImsiTree)]),
+				  [imsi_list:num_entries(ImsiTree)]),
 			application:set_env(mgw_nat, imsi_rewrite_tree, ImsiTree);
 		_ ->
 			ok
