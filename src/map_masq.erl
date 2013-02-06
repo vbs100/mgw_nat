@@ -143,10 +143,6 @@ patch(From, #'LocationInfoWithLMSI'{'networkNode-Number' = NetNodeNr} = P) ->
 	NetNodeNrOut = patch_map_isdn_addr(From, NetNodeNr, msc),
 	P#'LocationInfoWithLMSI'{'networkNode-Number' = NetNodeNrOut};
 
-% MO-ForwardSM-Arg with optional IMSI
-patch(From, #'MO-ForwardSM-Arg'{imsi = ImsiIn} = P) ->
-	P#'MO-ForwardSM-Arg'{imsi = patch_imsi(mo_fw_sm_arg, From, ImsiIn)};
-
 % patch the roaming number as it is sent from HLR to G-MSC (SRI Resp)
 patch(_From, {roamingNumber, RoamNumTBCD}) ->
 	RoamNumIn = map_codec:parse_addr_string(RoamNumTBCD),
@@ -292,9 +288,11 @@ patch(From, #'SubscriberInfo'{'locationInformation'=LocInformation} = P) ->
 patch(From, #'LocationInformation'{'vlr-number'=VlrNumber} = P) ->
 	VlrNumberOut = patch_map_isdn_addr(From, VlrNumber, vlr),
 	P#'LocationInformation'{'vlr-number'=VlrNumberOut};
-patch(From, #'MO-ForwardSM-Arg'{'sm-RP-DA'=SC} = P) ->
+patch(From, #'MO-ForwardSM-Arg'{'sm-RP-DA'=SC, imsi=ImsiIn} = P) ->
 	NewSC = patch_scaddr(From, SC),
-	P#'MO-ForwardSM-Arg'{'sm-RP-DA'=NewSC};
+	P#'MO-ForwardSM-Arg'{'sm-RP-DA'=NewSC,
+			     imsi = patch_imsi(mo_fw_sm_arg, From, ImsiIn)};
+
 
 patch(_From, Default) ->
 	Default.
