@@ -1,0 +1,92 @@
+
+== mgw_nat ==
+
+== files ==
+
+=== mgw_nat_app.erl ===
+
+This file contains the OTP application wrapper for running mgw_nat as an
+OTP application.  It exports the start/2 and stop/1 functions which are
+required for application:{start,stop}(mgw_nat) to work.
+
+There is also mgw_nat_app:reload_config/0, which will re-read the config
+file given to the erl machine as '-config' shell argument.
+
+=== mgw_nat_sup.erl ===
+
+This is the supervisor code, it starts:
+ * one mgw_nat_adm process
+ * one mgw_nat_usr for each signalling link in the config file
+
+=== mgw_nat_adm.erl ===
+
+This is a permanent server running under the supervisor, taking care of
+realoading configuration or dumping some information as well as casting
+messages to all of the mgw_nat_usr children.
+
+=== mgw_nat_usr.erl ===
+
+This is a gen_server OTP behavior which wraps the sctp_helper.   Among
+the arguments passed to the sctp_helper are the 'rewrite_act_mod', whcih
+is the name of the Erlang module actually doing the rewriting.
+
+=== sctp_helper.erl ===
+
+Erlang module for wrapping both a listen-type and a connect-type SCTP
+connection, taking care of re-connects, etc.  Each actual user payload
+message is handled via handle_rx_data/5, which will in turn call the
+rewrite_actor/5 function of the 'rewrite_act_mod'
+
+=== mgw_nat_act_vfuk_onw ===
+
+This is a rewrite actor module for patching the advertised CAMEL Phase
+during Location update of inbound roaming subsribers.
+
+the rewrite_actor/5 is first called with sctp as the first element, at
+which time mgw_nat:mangle_rx_data/4 is being called.  mangle_rx_data
+will parse all higher level protocols (m2ua/mtp3/sccp/tcap/map),
+and each time one protocol layer has been decoded, it will again call
+the rewrite_actor/5 function with the first argument set to the protocol
+in question.
+
+m2ua/mtp3/sccp is handled without modification by the default clause of
+rewrite_actor/5.
+
+Once the map level is reached, the mangle_map_camel_phase/3 function is
+called.  If the direction is STP->MSC, then the message is in the
+direction we are not interested in.
+
+In the MSC->STP direction, we decode the called_party_addr, do a global
+title match on it.  If there is a match against the int_camel_ph_tbl,
+then the hierarchical record data structure is walked by
+osmo_util:tuple_walk/3 which will call caleph_twalk_cb/3.  If there is a
+match on UpdateLocationArg, the supportedCamelPhases is rewritten
+accordingly.
+
+=== mgw_nat_act_bow_onw.erl ===
+
+This is a much more complex rewrite actor doing a lot of different
+rewrites whihc are not described here in detail.
+
+=== imsi_list.erl ===
+
+maintains a list of 1:1 IMSI mappings, internally represented by tw
+gb_tree's.
+ * read_list/1 populates the gb_trees from an Erlang list
+ * read_file/1 populates the gb_trees from a CSV file
+ * match_imsi/3 matches an IMSI either in forward or reverse direction
+
+=== mangle_tt_sri_sm.erl ===
+
+Contains utility code for rewriting the translation type of the global
+title present in SRI-for-SM  messages.
+
+=== sccp_masq.erl ===
+
+This code implements SCCP masquerading:
+
+The mgw_nat gateway has a pool of dynamically-allocated SCCP global
+titles.  Whenever needed (decided by other code), the original GT is
+replaced with one dynamically allocated from the pool.  If ther ever is
+a SCCP mesage directed at one of the dynamic addresses in response, the
+inverse translation back to the original address is performed.
