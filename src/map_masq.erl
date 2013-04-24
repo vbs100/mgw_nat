@@ -301,6 +301,8 @@ patch(_From, Default) ->
 patch_scaddr(From, {serviceCentreAddressDA,Ar}) ->
 	NewAddr = patch_map_isdn_addr(From, Ar, smsCDA),
 	{serviceCentreAddressDA,NewAddr};
+patch_scaddr(From, {imsi,ImsiIn}) ->
+	{imsi, patch_imsi(mo_fw_sm_arg, From, ImsiIn)};
 patch_scaddr(_From, Default) ->
 	Default.
 
@@ -512,7 +514,7 @@ imsi_direction(mo_fw_sm_arg) ->
 	reverse.
 
 % check if we need to rewrite the IMSI
-patch_imsi(MsgType, from_msc, ImsiIn) ->
+patch_imsi2(MsgType, ImsiIn) ->
 	IsForward = imsi_direction(MsgType),
 	case application:get_env(mgw_nat, imsi_rewrite_tree) of
 		{ok, ImsiTree} ->
@@ -521,12 +523,22 @@ patch_imsi(MsgType, from_msc, ImsiIn) ->
 			% rewrite prefix, if it matches
 			case imsi_list:match_imsi(IsForward, ImsiTree, Imsi) of
 				{ok, NewImsi} ->
+					io:format("~p:Rewriting IMSI ~p to ~p~n", [MsgType,Imsi, NewImsi]),
 					map_codec:encode_map_tbcd(NewImsi);
 				_ ->
+					io:format("~p:Not Rewriting IMSI ~p~n", [MsgType,Imsi]),
 					ImsiIn
 			end;
 		_ ->
 			ImsiIn
-	end;
+	end.
+
+% check if we need to rewrite the IMSI
+patch_imsi(_, _, asn1_NOVALUE) ->
+	asn1_NOVALUE;
+patch_imsi(sri_sm_res, from_msc, ImsiIn) ->
+	patch_imsi2(sri_sm_res, ImsiIn);
+patch_imsi(mo_fw_sm_arg, from_stp, ImsiIn) ->
+	patch_imsi2(mo_fw_sm_arg, ImsiIn);
 patch_imsi(_, _, Imsi) ->
 	Imsi.
