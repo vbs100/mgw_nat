@@ -108,7 +108,7 @@ mangle_rx_mtp3_serv(Fn, From, Path, ?MTP3_SERV_ISUP, Mtp3 = #mtp3_msg{payload = 
 	catch error:Error ->
 		io:format("ISUP In: ~p~n", [Payload]),
 		io:format("ISUP Decode: ~p~n", [Isup]),
-		ip:format("ISUP mangling Error: ~p~n", [Error]),
+		io:format("ISUP mangling Error: ~p~n", [Error]),
 		% return the unmodified original payload
 		Mtp3
 	end;
