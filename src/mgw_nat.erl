@@ -341,7 +341,11 @@ isup_party_nat00_internationalize(PartyNum) ->
 	#party_number{phone_number = DigitsIn, nature_of_addr_ind = Nature} = PartyNum,
 	case Nature of
 		?ISUP_ADDR_NAT_NATIONAL ->
-			{Pfx, Remain} = lists:split(2, DigitsIn),
+			if length(DigitsIn) < 2 ->
+				{Pfx, Remain} = {DigitsIn, []};
+			    true ->
+				{Pfx, Remain} = lists:split(2, DigitsIn)
+			end,
 			if Pfx == [0, 0] ->
 				DigitsOut = Remain,
 				NatureOut = ?ISUP_ADDR_NAT_INTERNATIONAL,
