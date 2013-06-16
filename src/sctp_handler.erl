@@ -35,7 +35,7 @@
 
 -module(sctp_handler).
 -author("Harald Welte <laforge@gnumonks.org>").
--export([init/6, handle_sctp/2]).
+-export([init/6, handle_sctp/2, sctp_local_out/4]).
 
 -include_lib("kernel/include/inet.hrl").
 -include_lib("kernel/include/inet_sctp.hrl").
@@ -175,3 +175,16 @@ handle_rx_data(Mod, L, From, SRInf = #sctp_sndrcvinfo{ppid = 2,
 
 handle_rx_data(_Mod, _L, From, SRInfo, Data) when is_binary(Data) ->
 	io:format("Unhandled Rx Data from SCTP from ~p: ~p, ~p~n", [From, SRInfo, Data]).
+
+
+sctp_local_out(L, From, OutData, SRInf) when is_record(L, loop_data),
+					     is_record(SRInf, sctp_sndrcvinfo) ->
+	case From of
+		from_msc ->
+			Sock = L#loop_data.stp_sock,
+			AssocId = L#loop_data.stp_assoc_id;
+		from_stp ->
+			Sock = L#loop_data.msc_sock,
+			AssocId = L#loop_data.msc_assoc_id
+	end,
+	gen_sctp:send(Sock, SRInf#sctp_sndrcvinfo{assoc_id = AssocId}, OutData).
