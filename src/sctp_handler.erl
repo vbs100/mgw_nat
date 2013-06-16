@@ -165,25 +165,31 @@ handle_sctp(L = #loop_data{msc_sock=MscSock, msc_remote_ip=MscRemoteIp, msc_remo
 % handle incoming data on one of the SCTP sockets
 handle_rx_data(Mod, L, From, SRInf = #sctp_sndrcvinfo{ppid = 2,
 						 stream = Stream}, Data) when is_binary(Data) ->
-	DataOut = Mod:rewrite_actor(sctp, From, [L, SRInf], 2, Data),
-	% send mangled data to other peer
-	case From of
-		from_msc ->
-			Sock = L#loop_data.stp_sock,
-			AssocId = L#loop_data.stp_assoc_id;
-		from_stp ->
-			Sock = L#loop_data.msc_sock,
-			AssocId = L#loop_data.msc_assoc_id
-	end,
-	SndRcvInfo = #sctp_sndrcvinfo{ppid = 2, stream = Stream, assoc_id = AssocId},
-	%io:format("Sending ~p to ~p ~p~n", [DataOut, Sock, SndRcvInfo]),
-	% if they are not equal, we will abort here
-	if DataOut == Data ->
-		ok;
-	   true ->
-		io:format("Data is NOT equal~n")
-	end,
-	ok = gen_sctp:send(Sock, SndRcvInfo, DataOut);
+	try Mod:rewrite_actor(sctp, From, [L, SRInf], 2, Data) of
+		DataOut ->
+			% send mangled data to other peer
+			case From of
+				from_msc ->
+					Sock = L#loop_data.stp_sock,
+					AssocId = L#loop_data.stp_assoc_id;
+				from_stp ->
+					Sock = L#loop_data.msc_sock,
+					AssocId = L#loop_data.msc_assoc_id
+			end,
+			SndRcvInfo = #sctp_sndrcvinfo{ppid = 2, stream = Stream, assoc_id = AssocId},
+			%io:format("Sending ~p to ~p ~p~n", [DataOut, Sock, SndRcvInfo]),
+			% if they are not equal, we will abort here
+			if DataOut == Data ->
+				ok;
+			   true ->
+				io:format("Data is NOT equal~n")
+			end,
+			ok = gen_sctp:send(Sock, SndRcvInfo, DataOut)
+	catch
+		throw:stolen ->
+			io:format("A message was stolen, not forwarding it~n")
+	end;
+
 
 handle_rx_data(_Mod, _L, From, SRInfo, Data) when is_binary(Data) ->
 	io:format("Unhandled Rx Data from SCTP from ~p: ~p, ~p~n", [From, SRInfo, Data]).
