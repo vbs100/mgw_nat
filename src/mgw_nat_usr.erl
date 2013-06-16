@@ -74,6 +74,10 @@ handle_cast(reload_config, L = {Params, _LoopData}) ->
 	RewriteActMod:reload_config(),
 	{noreply, L};
 
+handle_cast({sctp_local_out, Args}, L = {_InitParams, LoopData}) ->
+	apply(sctp_handler, sctp_local_out, [LoopData|Args]),
+	{noreply, L};
+
 handle_cast(stop, LoopData) ->
 	{stop, normal, LoopData}.
 
@@ -85,6 +89,7 @@ terminate(_Reason, _LoopData) ->
 handle_info({sctp, Sock, Ip, Port, Data}, {InitParams, LoopData}) ->
 	NewL = sctp_handler:handle_sctp(LoopData, {sctp, Sock, Ip, Port, Data}),
 	{noreply, {InitParams, NewL}}.
+
 
 % wrapper around proplists:get_value() to check for missing stuff
 get_cfg_pl_val(Name, List) ->
