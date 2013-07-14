@@ -34,14 +34,18 @@
 
 -module(mgw_nat_act_vfuk_onw).
 -author("Harald Welte <laforge@gnumonks.org>").
+-author("Tobias Engel <tobias@sternraute.de>").
 
--export([rewrite_actor/5, reload_config/0]).
--export([camelph_twalk_cb/3]).
+-export([rewrite_actor/5, reload_config/0, init_config/0]).
+-export([camelph_twalk_cb/3, camelph_twalk_outb_cb/3, subscr_data_twalk_cb/3,
+	 mo_sm_twalk_cb/3, mo_sm_resp_twalk_cb/3]).
 
+-include_lib("signerl/TCAP/include/TCAPMessages.hrl").
 -include_lib("osmo_map/include/map.hrl").
 -include_lib("osmo_ss7/include/sccp.hrl").
 -include_lib("osmo_ss7/include/isup.hrl").
 
+% fixme: move that stuff into config vars
 % Seconds until the IMSI from an Update Location is removed from the
 % cache if no matching Insert Subscriber Data was received
 % before. This is the timer value "m" from GSM 09.02 17.1.2, as it is
@@ -51,6 +55,15 @@
 % hasn't been renewed by another Insert Subscriber Data for the same
 % IMSI
 -define(CSI_TBL_TIMEOUT, 24 * 60).
+% Seconds until the TCAP transcation ids of a MO-FORWARD-SM dialogue
+% are removed if no answer was received. This is the timer value "ml"
+% from GSM 09.02 17.1.2, as it is used for moForwardSM, specified in
+% 17.6.5
+-define(MPID_TBL_TIMEOUT, 10 * 60).
+
+%%%
+%%% Rewrite actors for different layers of a message
+%%%
 
 % Rewrite at SCTP (root) level:
 rewrite_actor(sctp, From, Path, 2, DataBin) ->
@@ -71,14 +84,440 @@ rewrite_actor(sccp, from_msc, Path, SccpType, SccpDec) ->
 	mangle_tt_sri_sm:mangle_tt_sri_sm(from_msc, Path, SccpType, SccpDec);
 
 % Rewrite at MAP level: call into map_masq module
+% Also: intercept MO-FORWARD-SM and corresponding responses for the fake SMSSSF
 rewrite_actor(map, From, Path, 0, MapDec) ->
-	NewMapDec = mangle_map_camel_phase(From, Path, MapDec),
-	NewMapDec2 = mangle_map_subscriber_data(From, Path, NewMapDec),
-	intercept_map_mo_forward_sm(From, Path, NewMapDec2);
+	MapDec2 = mangle_map_camel_phase(From, Path, MapDec),
+	MapDec3 = mangle_map_subscriber_data(From, Path, MapDec2),
+	MapDec4 = intercept_map_mo_forward_sm(From, Path, MapDec3),
+	intercept_map_mo_forward_sm_resp(From, Path, MapDec4);
 
 % Default action: no rewrite
 rewrite_actor(_Level, _From, _Path, _MsgType, Msg) ->
 	Msg.
+
+
+%%%
+%%% Handle Location Updates
+%%%
+
+%% mangle_map_camel_phase
+%%
+%% Add (to messages from VPLMN for outbound roaming subsribers) or
+%% remove (from messages from ONW MSC for inbound roaming subscribers)
+%% CAMEL Phase IEs according to table (int_camel_ph_tbl_outb /
+%% int_camel_ph_tbl)
+
+mangle_map_camel_phase(from_stp, Path, MapDec) ->
+	mangle_map_message(Path, calling_party_addr, int_camel_ph_tbl_outb,
+			   MapDec, fun camelph_twalk_outb_cb/3);
+mangle_map_camel_phase(from_msc, Path, MapDec) ->
+	mangle_map_message(Path, called_party_addr, int_camel_ph_tbl,
+			   MapDec, fun camelph_twalk_cb/3).
+
+
+%% camelph_twalk_outb_cb
+%%
+%% Add VLR-Capability with supportedCamelPhases for outbound roaming
+%% subscribers. Also, save the IMSI of the subscriber in ETS table
+%% imsi_tbl (key consisting of tuple of original SCCP Calling Party
+%% Address and TCAP OTID)
+
+camelph_twalk_outb_cb(['begin', 'MapSpecificPDUs_begin', basicROS, invoke,
+		       'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke'],
+		      ULA = #'UpdateLocationArg'{},
+		      [PhaseL, CallingPAddr, {Otid, _} | _]) ->
+	Imsi = ULA#'UpdateLocationArg'.imsi,
+	Imsi_key = {CallingPAddr, Otid},
+	io:format("inserting into imsi table: key:~p val:~p~n",
+		  [Imsi_key, Imsi]),
+	ets:insert(imsi_tbl, {Imsi_key, Imsi}),
+	ets_delete_after(timer:seconds(?IMSI_TBL_TIMEOUT), imsi_tbl, Imsi_key),
+	delete_sd(Imsi),
+	Vc = ULA#'UpdateLocationArg'.'vlr-Capability',
+	Vc_out = case Vc of
+			#'VLR-Capability'{} -> Vc;
+			% Add VLR capabilities if none are present in
+			% UpdateLocationArg
+			asn1_NOVALUE -> #'VLR-Capability'{}
+		 end,
+	% Manipulate the VLR capabilities in UpdateLocationArg
+	Vc_out2 = Vc_out#'VLR-Capability'{supportedCamelPhases = PhaseL},
+	ULA#'UpdateLocationArg'{'vlr-Capability' = Vc_out2};
+
+camelph_twalk_outb_cb(_Path, Msg, _Args) ->
+	% Default case: simply return the unmodified tuple
+	Msg.
+
+
+%% camelph_twalk_cb
+%%
+%% Remove VLR-Capability for inbound roaming subscribers
+
+camelph_twalk_cb(['begin','MapSpecificPDUs_begin',basicROS,invoke,
+		  'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke',
+		  'UpdateLocationArg'],
+		 VC = #'VLR-Capability'{},
+		 [PhaseL|_Args]) ->
+	% Manipulate the VLR capabilities in UpdateLocationArg
+	VC#'VLR-Capability'{supportedCamelPhases = PhaseL};
+
+camelph_twalk_cb(_Path, Msg, _Args) ->
+	% Default case: simply return the unmodified tuple
+	Msg.
+
+
+%%%
+%%% Handle subscriber data related messages
+%%%
+
+%% mangle_map_subscriber_data
+%%
+%% Process MAP messages coming from ONW MSC. Consult table for
+%% outbound roaming subscribers (int_camel_ph_tbl_outb) to decide if
+%% message should be modified
+
+mangle_map_subscriber_data(from_stp, _Path, MapDec) ->
+	MapDec;
+mangle_map_subscriber_data(from_msc, Path, MapDec) ->
+	mangle_map_message(Path, called_party_addr, int_camel_ph_tbl_outb,
+			   MapDec, fun subscr_data_twalk_cb/3).
+
+
+%% subscr_data_twalk_cb
+%%
+%% Save or delete subscriber data from ISD (embedded or standalone)
+%% and DSD coming from ONW MSC. Also, remove CAMEL related IEs.
+
+% Save MSISDN from embedded ISD
+subscr_data_twalk_cb(['continue', 'MapSpecificPDUs_continue', basicROS, invoke,
+		      'MapSpecificPDUs_continue_components_SEQOF_basicROS_invoke'],
+		     ISD = #'InsertSubscriberDataArg'{'msisdn' = Msisdn},
+		     [_PhaseL, CalledPAddr, Tids | _])
+    when Msisdn =/= asn1_NOVALUE ->
+	{_, Dtid} = Tids,
+	Imsi_key = {CalledPAddr, Dtid},
+	save_sd(imsi_key, Imsi_key, msisdn, Msisdn),
+	ISD;
+
+% Save MO-SMS-CSI from embedded ISD and remove VlrCamelSubscriptionInfo
+subscr_data_twalk_cb(['continue', 'MapSpecificPDUs_continue', basicROS, invoke,
+		      'MapSpecificPDUs_continue_components_SEQOF_basicROS_invoke', 'InsertSubscriberDataArg'],
+		     #'VlrCamelSubscriptionInfo'{'mo-sms-CSI' = #'SMS-CSI'{} = MoSmsCsi},
+		     [_PhaseL, CalledPAddr, Tids | _]) ->
+	{_, Dtid} = Tids,
+	Imsi_key = {CalledPAddr, Dtid},
+	save_sd(imsi_key, Imsi_key, mosmscsi, MoSmsCsi),
+	% this might cause an empty ISD message
+	asn1_NOVALUE;
+
+% If there is no MO-SMS-CSI in VlrCamelSubscriptionInfo just remove it
+subscr_data_twalk_cb(['continue', 'MapSpecificPDUs_continue', basicROS, invoke,
+		      'MapSpecificPDUs_continue_components_SEQOF_basicROS_invoke',
+		      'InsertSubscriberDataArg'],
+		     #'VlrCamelSubscriptionInfo'{}, _) ->
+	% this might cause an empty ISD message
+	asn1_NOVALUE;
+
+% Save MO-SMS-CSI from standalone ISD and remove
+% VlrCamelSubscriptionInfo (MSISDN should still be saved from LU with
+% embedded ISD)
+subscr_data_twalk_cb(['begin','MapSpecificPDUs_begin',basicROS, invoke,
+		      'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke'],
+		     ISD = #'InsertSubscriberDataArg'{'imsi' = Imsi,
+						      'vlrCamelSubscriptionInfo' = #'VlrCamelSubscriptionInfo'{} = Csi},
+		     _)
+    when is_record(Csi#'VlrCamelSubscriptionInfo'.'mo-sms-CSI', 'SMS-CSI') ->
+	save_sd(imsi, Imsi, mosmscsi,
+		Csi#'VlrCamelSubscriptionInfo'.'mo-sms-CSI'),
+	% this might cause an empty ISD message
+	ISD#'InsertSubscriberDataArg'{'vlrCamelSubscriptionInfo' = asn1_NOVALUE};
+
+% If there is no MO-SMS-CSI in VlrCamelSubscriptionInfo just remove it
+subscr_data_twalk_cb(['begin','MapSpecificPDUs_begin',basicROS, invoke,
+		      'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke',
+		      'InsertSubscriberDataArg'],
+		     #'VlrCamelSubscriptionInfo'{}, _) ->
+	% this might cause an empty DSD message
+	asn1_NOVALUE;
+
+% Delete MO-SMS-CSI and remove camelSubscriptionInfoWithdraw IE
+subscr_data_twalk_cb(['begin','MapSpecificPDUs_begin',basicROS, invoke,
+		      'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke'],
+		     DSD = #'DeleteSubscriberDataArg'{'imsi' = Imsi,
+						      'camelSubscriptionInfoWithdraw' = 'NULL'},
+		     _) ->
+	delete_csi(Imsi),
+	DSD#'DeleteSubscriberDataArg'{'camelSubscriptionInfoWithdraw' = asn1_NOVALUE};
+
+% Delete MO-SMS-CSI and remove specificCSI-Withdraw IE
+subscr_data_twalk_cb(['begin','MapSpecificPDUs_begin',basicROS, invoke,
+		      'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke'],
+		     DSD = #'DeleteSubscriberDataArg'{'imsi' = Imsi,
+						      'specificCSI-Withdraw' = CsiWithdraw },
+		     _)
+    when is_list(CsiWithdraw) ->
+	case lists:member('mo-sms-csi', CsiWithdraw) of
+		true -> delete_csi(Imsi);
+		_ -> ok
+	end,
+	% this might cause an empty DSD message
+	DSD#'DeleteSubscriberDataArg'{'specificCSI-Withdraw' = asn1_NOVALUE};
+
+subscr_data_twalk_cb(_Path, Msg, _Args) ->
+	% Default case: simply return the unmodified tuple
+	Msg.
+
+
+%%%
+%%% Handle MO SMS
+%%%
+
+%% intercept_map_mo_forward_sm
+%%
+%% Intercept MO-FORWARD-SM from VPLMN. Consult table for outbound
+%% roaming subscribers (int_camel_ph_tbl_outb) to decide if message
+%% should be intercepted.
+
+intercept_map_mo_forward_sm(from_msc, _Path, MapDec) ->
+	MapDec;
+intercept_map_mo_forward_sm(from_stp, Path, MapDec) ->
+	mangle_map_message(Path, calling_party_addr, int_camel_ph_tbl_outb,
+			   MapDec, fun mo_sm_twalk_cb/3).
+
+
+%% mo_sm_twalk_cb
+%%
+%% Tuplewalk function to handle a MO-FORWARD-SM from the VPLMN. This
+%% can either be a TCAP Begin oder Continue (in case of TCAP
+%% handshake) or an Abort. All the relevant original data gets passed
+%% to a new fake_msc process, then the "stolen" exception is thrown to
+%% signal that this message should be discarded in this process.
+
+% SMS in Begin
+mo_sm_twalk_cb(['begin', 'MapSpecificPDUs_begin', basicROS, invoke],
+	       Inv = #'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke'{invokeId = {present, InvokeId},
+									       argument = SMS = #'MO-ForwardSM-Arg'{'sm-RP-OA' = {msisdn, Msisdn}}},
+	       [_PhaseL, CallingPAddr, {Otid, _}, Path, MapDec | _]) ->
+	% find CSI by MSISDN
+	case dets:match(csi_tbl, {'$1', Msisdn, '$2', '_'}) of
+		[{Imsi, MoSmsCsi}] ->
+			MPid_key = {CallingPAddr, Otid},
+			{ok, MPid} = supervisor:start_child(fake_msc_sup,
+							    [[Imsi, Msisdn,
+							      MoSmsCsi, SMS, 
+							      InvokeId, Path,
+							      MapDec]]),
+			ets:insert(mpid_tbl, {MPid_key, MPid}),
+			ets_delete_after(timer:seconds(?MPID_TBL_TIMEOUT),
+					 mpid_tbl,
+					 MPid_key),
+			throw(stolen);
+		[] ->
+			Inv % fixme: release sms if CSI not found?
+	end;
+
+% SMS in Continue after TCAP handshake
+mo_sm_twalk_cb(['continue', 'MapSpecificPDUs_continue', basicROS, invoke],
+	       Inv = #'MapSpecificPDUs_continue_components_SEQOF_basicROS_invoke'{invokeId = {present, InvokeId},
+										  argument = SMS = #'MO-ForwardSM-Arg'{'sm-RP-OA' = {msisdn, Msisdn}}},
+	       [_PhaseL, CallingPAddr, {Otid, Dtid}, Path, MapDec | _]) ->
+	% find CSI by MSISDN
+	case dets:match(csi_tbl, {'$1', Msisdn, '$2', '_'}) of
+		[{Imsi, MoSmsCsi}] ->
+			MPid_key = {CallingPAddr, Otid},
+			{ok, MPid} = supervisor:start_child(fake_msc_sup,
+							    [[Imsi, Msisdn,
+							      MoSmsCsi, SMS,
+							      InvokeId, Path,
+							      MapDec]]),
+			% This also saves the DTID so the dialogue
+			% handler can be found in case of an abort
+			ets:insert(mpid_tbl, {MPid_key, MPid, Dtid}),
+			ets_delete_after(timer:seconds(?MPID_TBL_TIMEOUT),
+					 mpid_tbl,
+					 MPid_key),
+			throw(stolen);
+		[] ->
+			Inv % fixme: release sms if CSI not found?
+	end;
+
+% fixme: this might be processed out of order if the original message
+% has not been sent on yet
+% Abort from VPLMN can only be sent after the dialogue has been
+% established, so only in the case of a TCAP handshake
+mo_sm_twalk_cb(['abort'],
+	       Msg = #'Abort'{},
+	       [_PhaseL, CallingPAddr, {_, Dtid} | _]) ->
+	MPid_key = {CallingPAddr, Dtid},
+	case find_dialogue_handler(dtid, MPid_key) of
+		{ok, MPid} -> fake_msc:camel_o_sms_failure(MPid);
+		_ -> ok
+	end,
+	Msg;
+
+mo_sm_twalk_cb(_Path, Msg, _Args) ->
+	Msg.
+
+
+%%%
+%%% Handle MO SMS responses
+%%%
+
+%% intercept_map_mo_forward_sm_resp
+%%
+%% Intercept MO-FORWARD-SM response from ONW MSC. Consult table for
+%% outbound roaming subscribers (int_camel_ph_tbl_outb) to decide if
+%% message should be intercepted.
+
+intercept_map_mo_forward_sm_resp(from_msc, Path, MapDec) ->
+	mangle_map_message(Path, called_party_addr, int_camel_ph_tbl_outb,
+			   MapDec, fun mo_sm_resp_twalk_cb/3);
+
+intercept_map_mo_forward_sm_resp(from_stp, _Path, MapDec) ->
+	MapDec.
+
+
+%% mo_sm_resp_twalk_cb
+%%
+%% Tuplewalk function to handle a MO-FORWARD-SM response from ONW
+%% MSC. This can only be a TCAP End (or Abort), since there is no
+%% "More Messages to Send" field for MO SMS. The fake SSF gets
+%% notified and the message is passed on unmodified in all cases.
+
+% outbound (from msc) tcap end, Dtid == originators Otid
+mo_sm_resp_twalk_cb(['end', 'MapSpecificPDUs_end', basicROS, returnResult],
+		   Msg,	[_PhaseL, CalledPAddr, {_, Dtid} | _]) ->
+	MPid_key = {CalledPAddr, Dtid},
+	case find_dialogue_handler(otid, MPid_key) of
+		{ok, MPid} -> fake_msc:abort(MPid);
+		_ -> ok
+	end,
+	Msg;
+
+mo_sm_resp_twalk_cb(['end', 'MapSpecificPDUs_end', basicROS, returnError],
+		    Msg = #'MapSpecificPDUs_end_components_SEQOF_basicROS_returnError'{errcode = {local, Errcode}},
+		    [_PhaseL, CalledPAddr, {_, Dtid} | _]) ->
+	MPid_key = {CalledPAddr, Dtid},
+	case find_dialogue_handler(otid, MPid_key) of
+		{ok, MPid} -> fake_msc:camel_o_sms_failure(MPid, Errcode);
+		_ -> ok
+	end,
+	Msg;
+
+mo_sm_resp_twalk_cb(['abort'],
+		    Msg = #'Abort'{},
+		    [_PhaseL, CalledPAddr, {_, Dtid} | _]) ->
+	MPid_key = {CalledPAddr,Dtid},
+	case find_dialogue_handler(otid, MPid_key) of
+		{ok, MPid} -> fake_msc:camel_o_sms_failure(MPid);
+		_ -> ok
+	end,
+	Msg;
+
+mo_sm_resp_twalk_cb(_Path, Msg, _Args) ->
+	Msg.
+
+
+%%%
+%%% Helper functions
+%%%
+
+%% save_sd
+%%
+%% Stores IMSI, MSISDN and MO-SMS-CSI of a subscriber in csi_tbl DETS
+%% table. If IMSI is not available from the request (during embedded
+%% ISD) it will be looked up in imsi_tbl ETS table by SCCP Calling
+%% Party Address and TCAP OTID. Timestamp of insertion time gets also
+%% saved so the data can be safely expired after a certain amount of
+%% time without renewal.
+
+save_sd(imsi_key, Imsi_key, Type, Val) ->
+	case ets:lookup(imsi_tbl, Imsi_key) of
+		[{_, Imsi}] ->
+			save_sd(imsi, Imsi, Type, Val);
+		[] ->
+			io:format("SCCP addr/TCAP TID ~p not found~n",
+				  [Imsi_key])
+	end;
+
+save_sd(imsi, Imsi, Type, Val) ->
+	case dets:lookup(csi_tbl, Imsi) of
+		[{_, Msisdn, MoSmsCsi, Ts}] ->
+			case Type of
+				msisdn -> dets:insert(csi_tbl,
+						      {Imsi, Val, MoSmsCsi, Ts});
+				mosmscsi -> dets:insert(csi_tbl,
+							{Imsi, Msisdn, Val, Ts})
+			end;
+		[] ->
+			Ts = now(),
+			case Type of
+				msisdn -> dets:insert(csi_tbl,
+						      {Imsi, Val, false, Ts});
+				mosmscsi -> dets:insert(csi_tbl,
+							{Imsi, false, Val, Ts})
+			end
+	end,
+	dets_match_delete_after(timer:minutes(?CSI_TBL_TIMEOUT),
+				csi_tbl,
+				{Imsi, '_', '_', Ts}), 
+	io:format("Saving Subscriber Data for imsi:~p ~p:~p~n",
+		  [Imsi, Type, Val]).
+
+
+%% delete_sd
+%%
+%% Removes subscriber data from csi_tbl by IMSI.
+
+delete_sd(Imsi) ->
+	dets:delete(csi_tbl, Imsi).
+
+
+%% delete_csi
+%%
+%% Removes only MO-SMS-CSI data frmo csi_tb for subscriber identified
+%% by IMSI.
+
+delete_csi(Imsi) ->
+	save_sd(imsi, Imsi, mosmscsi, false).
+
+
+%% dets_match_delete_after
+
+dets_match_delete_after(Time, Name, Pattern) ->
+	timer:apply_after(Time, dets, match_delete, [Name, Pattern]).
+
+
+%% ets_delete_after
+
+ets_delete_after(Time, Tab, Key) ->
+	timer:apply_after(Time, ets, delete, [Tab, Key]).
+
+
+%% find_dialogue_handler
+%%
+%% In the mpid_tbl table, lookup the PID of the fake_msc process that
+%% handles this MO-FORWARD-SM TCAP dialogue. Removes the PID from the
+%% table and returns it.
+
+find_dialogue_handler(otid, MPid_key) ->
+	Ret = case ets:lookup(mpid_tbl, MPid_key) of
+		  [{_, MPid}] -> {ok, MPid};
+		  [] -> notfound
+	      end,
+	ets:delete(mpid_tbl, MPid_key),
+	Ret;
+
+find_dialogue_handler(dtid, {CPAddr, Dtid}) ->
+	case ets:match_delete(mpid_tbl, {{CPAddr, '_'}, '$1', Dtid}) of
+		[[MPid]] -> {ok, MPid};
+		[] -> notfound
+	end.
+
+
+%% get_tid
+%%
+%% Return the TIDs present in a TCAP message
 
 get_tid({_, MapPDU}) ->
 	case MapPDU of
@@ -89,17 +528,25 @@ get_tid({_, MapPDU}) ->
 		#'MapSpecificPDUs_end'{} ->
 			{ false, MapPDU#'MapSpecificPDUs_end'.dtid };
 		#'MapSpecificPDUs_continue'{} ->
-			{ MapPDU#'MapSpecificPDUs_continue'.otid, MapPDU#'MapSpecificPDUs_continue'.dtid };
+			{ MapPDU#'MapSpecificPDUs_continue'.otid,
+			  MapPDU#'MapSpecificPDUs_continue'.dtid };
 		_ ->
 			{ false, false }
 	end.
 
-% Generic function to match SCCP Addr (AddrType) against a range in a
-% table (RangeTblName) and if it matches modify message with the data
-% from the table by calling TWalkFun
+
+%% mangle_map_message
+%%
+%% Generic function to match an SCCP Address of type AddrType (called_
+%% or calling_party_addr) against a range in a table (RangeTblName)
+%% and if it matches modify message with the data from the table by
+%% calling TWalkFun
+
 mangle_map_message(Path, AddrType, RangeTblName, MapDec, TWalkFun) ->
 	% Resolve the Global Title of the SCCP Addr
-	{value, #sccp_msg{parameters = SccpPars}} = lists:keysearch(sccp_msg, 1, Path),
+	{value, #sccp_msg{parameters = SccpPars}} = lists:keysearch(sccp_msg,
+								    1,
+								    Path),
 	Addr = proplists:get_value(AddrType, SccpPars),
 	{ok, Tbl} = application:get_env(mgw_nat, RangeTblName),
 	case osmo_ss7_gtt:global_title_match(Tbl, Addr) of
@@ -109,163 +556,17 @@ mangle_map_message(Path, AddrType, RangeTblName, MapDec, TWalkFun) ->
 			#global_title{phone_number = PhoneNum} = Addr#sccp_addr.global_title,
 			PhoneNumInt = osmo_util:digit_list2int(PhoneNum),
 			Tids = get_tid(MapDec),
-			io:format("Rewriting MAP message with ~p, GT ~p (TIDs: ~p)~n", [DataL, PhoneNumInt, Tids]),
-			osmo_util:tuple_walk(MapDec, TWalkFun, [DataL, Addr, Tids])
+			io:format("Rewriting MAP message with ~p, GT ~p (TIDs: ~p)~n",
+				  [DataL, PhoneNumInt, Tids]),
+			osmo_util:tuple_walk(MapDec,
+					     TWalkFun,
+					     [DataL, Addr, Tids, Path, MapDec])
 	end.
 
 
-mangle_map_camel_phase(from_stp, Path, MapDec) ->
-	mangle_map_message(Path, calling_party_addr, int_camel_ph_tbl_outb, MapDec, fun camelph_twalk_outb_cb/3);
-mangle_map_camel_phase(from_msc, Path, MapDec) ->
-	mangle_map_message(Path, called_party_addr, int_camel_ph_tbl, MapDec, fun camelph_twalk_cb/3).
-
-% structure of ETS imsi_tbl:
-% key: consisting of tuple of original SCCP Calling Party Address and TCAP OTID
-% value: IMSI (from LU)
-
-% tuple tree walker callback function
-camelph_twalk_outb_cb(['begin','MapSpecificPDUs_begin',basicROS,invoke,
-		       'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke'],
-		       ULA = #'UpdateLocationArg'{}, [PhaseL, CallingPAddr, Tids | _]) ->
-	Imsi = ULA#'UpdateLocationArg'.imsi,
-	{Otid, _} = Tids,
-	Imsi_key = {CallingPAddr, Otid},
-	io:format("inserting into imsi table: key:~p val:~p~n",
-		  [Imsi_key, Imsi]),
-	true = ets:insert(imsi_tbl, {Imsi_key, Imsi}),
-	timer:apply_after(timer:seconds(?IMSI_TBL_TIMEOUT), ets, match_delete, [imsi_tbl, {Imsi_key, '_'}]),
-	delete_sd(Imsi),
-	Vc = ULA#'UpdateLocationArg'.'vlr-Capability',
-	Vc_out = case Vc of
-			#'VLR-Capability'{} -> Vc;
-			% Add VLR capabilities if none are present in UpdateLocationArg
-			asn1_NOVALUE -> #'VLR-Capability'{}
-		 end,
-	% Manipulate the VLR capabilities in UpdateLocationArg
-	ULA#'UpdateLocationArg'{'vlr-Capability' = Vc_out#'VLR-Capability'{supportedCamelPhases = PhaseL}};
-camelph_twalk_outb_cb(_Path, Msg, _Args) ->
-	% Default case: simply return the unmodified tuple
-	Msg.
-
-% tuple tree walker callback function
-camelph_twalk_cb(['begin','MapSpecificPDUs_begin',basicROS,invoke,
-		  'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke',
-		  'UpdateLocationArg'], VC = #'VLR-Capability'{}, [PhaseL|_Args]) ->
-	% Manipulate the VLR capabilities in UpdateLocationArg
-	VC#'VLR-Capability'{supportedCamelPhases = PhaseL};
-camelph_twalk_cb(_Path, Msg, _Args) ->
-	% Default case: simply return the unmodified tuple
-	Msg.
-
-
-mangle_map_subscriber_data(from_stp, _Path, MapDec) ->
-	MapDec;
-mangle_map_subscriber_data(from_msc, Path, MapDec) ->
-	mangle_map_message(Path, called_party_addr, int_camel_ph_tbl_outb, MapDec, fun subscr_data_twalk_cb/3).
-
-
-% tuple tree walker callback function
-subscr_data_twalk_cb(['continue', 'MapSpecificPDUs_continue', basicROS, invoke,
-		      'MapSpecificPDUs_continue_components_SEQOF_basicROS_invoke' ],
-		     ISD = #'InsertSubscriberDataArg'{'msisdn' = Msisdn},
-		     [_PhaseL, CalledPAddr, Tids | _]) when Msisdn =/= asn1_NOVALUE ->
-	{_, Dtid} = Tids,
-	Imsi_key = {CalledPAddr, Dtid},
-	save_sd(imsi_key, Imsi_key, msisdn, Msisdn),
-	ISD;
-subscr_data_twalk_cb(['continue', 'MapSpecificPDUs_continue', basicROS, invoke,
-		      'MapSpecificPDUs_continue_components_SEQOF_basicROS_invoke', 'InsertSubscriberDataArg'],
-		     #'VlrCamelSubscriptionInfo'{'mo-sms-CSI' = #'SMS-CSI'{} = MoSmsCsi},
-		     [_PhaseL, CalledPAddr, Tids | _]) ->
-	{_, Dtid} = Tids,
-	Imsi_key = {CalledPAddr, Dtid},
-	save_sd(imsi_key, Imsi_key, mosmscsi, MoSmsCsi),
-	asn1_NOVALUE; % this might cause an empty ISD message
-subscr_data_twalk_cb(['continue', 'MapSpecificPDUs_continue', basicROS, invoke,
-		      'MapSpecificPDUs_continue_components_SEQOF_basicROS_invoke', 'InsertSubscriberDataArg'],
-		     #'VlrCamelSubscriptionInfo'{}, _) ->
-	asn1_NOVALUE; % this might cause an empty ISD message
-subscr_data_twalk_cb(['begin','MapSpecificPDUs_begin',basicROS, invoke,
-		      'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke' ],
-		     ISD = #'InsertSubscriberDataArg'{'imsi' = Imsi,
-						      'vlrCamelSubscriptionInfo' = #'VlrCamelSubscriptionInfo'{} = Csi},
-		     _) when is_record(Csi#'VlrCamelSubscriptionInfo'.'mo-sms-CSI', 'SMS-CSI') ->
-	save_sd(imsi, Imsi, mosmscsi, Csi#'VlrCamelSubscriptionInfo'.'mo-sms-CSI'),
-	ISD#'InsertSubscriberDataArg'{'vlrCamelSubscriptionInfo' = asn1_NOVALUE}; % this might cause an empty ISD message
-subscr_data_twalk_cb(['begin','MapSpecificPDUs_begin',basicROS, invoke,
-		      'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke', 'InsertSubscriberDataArg'],
-		     #'VlrCamelSubscriptionInfo'{}, _) ->
-	asn1_NOVALUE; % this might cause an empty ISD message
-subscr_data_twalk_cb(['begin','MapSpecificPDUs_begin',basicROS, invoke,
-		      'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke'],
-		     DSD = #'DeleteSubscriberDataArg'{'imsi' = Imsi, 'camelSubscriptionInfoWithdraw' = 'NULL'}, _) ->
-	delete_csi(Imsi),
-	DSD#'DeleteSubscriberDataArg'{'camelSubscriptionInfoWithdraw' = asn1_NOVALUE}; % this might cause an empty DSD message
-subscr_data_twalk_cb(['begin','MapSpecificPDUs_begin',basicROS, invoke,
-		      'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke'],
-		     DSD = #'DeleteSubscriberDataArg'{'imsi' = Imsi, 'specificCSI-Withdraw' = CsiWithdraw },
-		     _) when is_list(CsiWithdraw) ->
-	case lists:member('mo-sms-csi', CsiWithdraw) of
-		true -> delete_csi(Imsi);
-		false -> dummy
-	end,
-	DSD#'DeleteSubscriberDataArg'{'specificCSI-Withdraw' = asn1_NOVALUE}; % this might cause an empty DSD message
-subscr_data_twalk_cb(_Path, Msg, _Args) ->
-	% Default case: simply return the unmodified tuple
-	Msg.
-
-%%%%%%%%%%%%%%%%%%%%% todo: create imsi_tbl at startup
-save_sd(imsi_key, Imsi_key, Type, Val) ->
-	case ets:lookup(imsi_tbl, Imsi_key) of
-		[{_, Imsi}] ->
-			save_sd(imsi, Imsi, Type, Val);
-		[] ->
-			io:format("SCCP addr/TCAP TID ~p not found~n", [Imsi_key])
-	end;
-save_sd(imsi, Imsi, Type, Val) ->
-	case dets:lookup(csi_tbl, Imsi) of
-		[{_, Msisdn, MoSmsCsi, Ts}] ->
-			case Type of
-				msisdn -> dets:insert(csi_tbl, {Imsi, Val, MoSmsCsi, Ts});
-				mosmscsi -> dets:insert(csi_tbl, {Imsi, Msisdn, Val, Ts})
-			end;
-		[] ->
-			Ts = now(),
-			case Type of
-				msisdn -> dets:insert(csi_tbl, {Imsi, Val, false, Ts});
-				mosmscsi -> dets:insert(csi_tbl, {Imsi, false, Val, Ts})
-			end
-	end,
-	timer:apply_after(timer:minutes(?CSI_TBL_TIMEOUT), dets, match_delete, [csi_tbl, {Imsi, '_', '_', Ts}]), 
-	io:format("Saving Subscriber Data for imsi:~p ~p:~p~n", [Imsi, Type, Val]).
-
-delete_sd(Imsi) ->
-	dets:match_delete(csi_tbl, {Imsi, '_', '_', '_'}).
-
-delete_csi(Imsi) ->
-	save_sd(imsi, Imsi, mosmscsi, false).
-
-%%%%%%%%%%%%%%%%%%%% todo: check old csi at startup time.
-
-intercept_map_mo_forward_sm(from_msc, _Path, MapDec) ->
-	MapDec;
-intercept_map_mo_forward_sm(from_stp, Path, MapDec) ->
-	mangle_map_message(Path, calling_party_addr, int_camel_ph_tbl_outb, MapDec, fun mo_sm_twalk_cb/3).
-
-%%%%%%%%%%%%%%%%%% unfinished
-mo_sm_twalk_cb(['begin', 'MapSpecificPDUs_begin', basicROS, invoke,
-		'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke' ],
-	       SMS = #'MO-ForwardSM-Arg'{'sm-RP-OA' = {msisdn, Msisdn}},
-	       [_PhaseL, CallingPAddr | _]) ->
-	case dets:match(csi_tbl, {'$1', Msisdn, '$2', '_'}) of
-		[{Imsi, MoSmsCsi}] ->
-			SMS;
-		[] ->
-			SMS
-	end;
-mo_sm_twalk_cb(_Path, Msg, _Args) ->
-	Msg.
-
+%%%
+%%% Config related functions
+%%%
 
 gen_int_camelph_tbl(L) ->
 	gen_int_camelph_tbl(L, []).
@@ -276,6 +577,7 @@ gen_int_camelph_tbl([{GttPart, PhasePart}|Tail], Out) ->
 	% Fixme: use ordered insert!
 	gen_int_camelph_tbl(Tail, Out ++ [{GttMatch, PhasePart}]).
 
+
 convert_camelph_tbl(TblInName, TblOutName) ->
 	{ok, CamelPatchTblIn} = application:get_env(mgw_nat, TblInName),
 	io:format("VFUK-ONW actor: reloading config ~p~n", [CamelPatchTblIn]),
@@ -283,14 +585,21 @@ convert_camelph_tbl(TblInName, TblOutName) ->
 		TblOut ->
 			application:set_env(mgw_nat, TblOutName, TblOut)
 		catch error:Error ->
-			error_logger:error_report([{error, Error},
-						   {stacktrace, erlang:get_stacktrace()}])
+			error_logger:error_report([{error,
+						    Error},
+						   {stacktrace,
+						    erlang:get_stacktrace()}])
 	end.
 
-reload_config() ->
-	convert_camelph_tbl(camel_phase_patch_table, int_camel_ph_tbl),
-	convert_camelph_tbl(camel_phase_patch_table_outbound, int_camel_ph_tbl_outb),
+
+init_config() ->
 	{ok, CsiTblFilename} = application:get_env(mgw_nat, csi_tbl_filename),
-	%%%%%%%%%%%%%%% todo: move dets table open to startup due to possible race condition
-	dets:close(csi_tbl),
+	% fixme: do we need to close the table during shutdown?
 	{ok, _} = dets:open_file(csi_tbl, [{file, CsiTblFilename}]).
+	
+
+reload_config() ->
+	convert_camelph_tbl(camel_phase_patch_table,
+			    int_camel_ph_tbl),
+	convert_camelph_tbl(camel_phase_patch_table_outbound,
+			    int_camel_ph_tbl_outb).
