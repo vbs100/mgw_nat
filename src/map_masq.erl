@@ -40,6 +40,7 @@
 
 -include_lib("osmo_map/include/map.hrl").
 -include_lib("osmo_ss7/include/isup.hrl").
+-include_lib("TCAP/include/TCAPMessages.hrl").
 
 % Use the MAP address translation table to alter an ISDN-Address-String
 patch_map_isdn_addr(_From, asn1_NOVALUE, _Type) ->
