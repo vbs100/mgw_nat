@@ -40,26 +40,10 @@
 -export([camelph_twalk_cb/3, camelph_twalk_outb_cb/3, subscr_data_twalk_cb/3,
 	 mo_sm_twalk_cb/3, mo_sm_resp_twalk_cb/3]).
 
--include_lib("signerl/TCAP/include/TCAPMessages.hrl").
+-include_lib("TCAP/include/TCAPMessages.hrl").
 -include_lib("osmo_map/include/map.hrl").
 -include_lib("osmo_ss7/include/sccp.hrl").
 -include_lib("osmo_ss7/include/isup.hrl").
-
-% fixme: move that stuff into config vars
-% Seconds until the IMSI from an Update Location is removed from the
-% cache if no matching Insert Subscriber Data was received
-% before. This is the timer value "m" from GSM 09.02 17.1.2, as it is
-% used for Update Location, specified in 17.6.1
--define(IMSI_TBL_TIMEOUT, 30).
-% Minutes until the MO-SMS-CSI is removed from the database if it
-% hasn't been renewed by another Insert Subscriber Data for the same
-% IMSI
--define(CSI_TBL_TIMEOUT, 24 * 60).
-% Seconds until the TCAP transcation ids of a MO-FORWARD-SM dialogue
-% are removed if no answer was received. This is the timer value "ml"
-% from GSM 09.02 17.1.2, as it is used for moForwardSM, specified in
-% 17.6.5
--define(MPID_TBL_TIMEOUT, 10 * 60).
 
 %%%
 %%% Rewrite actors for different layers of a message
@@ -131,7 +115,8 @@ camelph_twalk_outb_cb(['begin', 'MapSpecificPDUs_begin', basicROS, invoke,
 	io:format("inserting into imsi table: key:~p val:~p~n",
 		  [Imsi_key, Imsi]),
 	ets:insert(imsi_tbl, {Imsi_key, Imsi}),
-	ets_delete_after(timer:seconds(?IMSI_TBL_TIMEOUT), imsi_tbl, Imsi_key),
+	{ok, ImsiTblTimeout} = application:get_env(mgw_nat, imsi_tbl_timeout_secs),
+	ets_delete_after(timer:seconds(ImsiTblTimeout), imsi_tbl, Imsi_key),
 	delete_sd(Imsi),
 	Vc = ULA#'UpdateLocationArg'.'vlr-Capability',
 	Vc_out = case Vc of
@@ -300,7 +285,7 @@ mo_sm_twalk_cb(['begin', 'MapSpecificPDUs_begin', basicROS, invoke],
 	       [_PhaseL, CallingPAddr, {Otid, _}, Path, MapDec | _]) ->
 	% find CSI by MSISDN
 	case dets:match(csi_tbl, {'$1', Msisdn, '$2', '_'}) of
-		[{Imsi, MoSmsCsi}] ->
+		[[Imsi, MoSmsCsi]] ->
 			MPid_key = {CallingPAddr, Otid},
 			{ok, MPid} = supervisor:start_child(fake_msc_sup,
 							    [[Imsi, Msisdn,
@@ -308,10 +293,12 @@ mo_sm_twalk_cb(['begin', 'MapSpecificPDUs_begin', basicROS, invoke],
 							      InvokeId, Path,
 							      MapDec]]),
 			ets:insert(mpid_tbl, {MPid_key, MPid}),
-			ets_delete_after(timer:seconds(?MPID_TBL_TIMEOUT),
+			{ok, MPidTblTimeout} = application:get_env(mgw_nat,
+								   mpid_tbl_timeout_secs),
+			ets_delete_after(timer:seconds(MPidTblTimeout),
 					 mpid_tbl,
-					 MPid_key),
-			throw(stolen);
+					 MPid_key);%,
+			%throw(stolen);
 		[] ->
 			Inv % fixme: release sms if CSI not found?
 	end;
@@ -333,7 +320,9 @@ mo_sm_twalk_cb(['continue', 'MapSpecificPDUs_continue', basicROS, invoke],
 			% This also saves the DTID so the dialogue
 			% handler can be found in case of an abort
 			ets:insert(mpid_tbl, {MPid_key, MPid, Dtid}),
-			ets_delete_after(timer:seconds(?MPID_TBL_TIMEOUT),
+			{ok, MPidTblTimeout} = application:get_env(mgw_nat,
+								   mpid_tbl_timeout_secs),
+			ets_delete_after(timer:seconds(MPidTblTimeout),
 					 mpid_tbl,
 					 MPid_key),
 			throw(stolen);
@@ -389,7 +378,7 @@ mo_sm_resp_twalk_cb(['end', 'MapSpecificPDUs_end', basicROS, returnResult],
 		   Msg,	[_PhaseL, CalledPAddr, {_, Dtid} | _]) ->
 	MPid_key = {CalledPAddr, Dtid},
 	case find_dialogue_handler(otid, MPid_key) of
-		{ok, MPid} -> fake_msc:abort(MPid);
+		{ok, MPid} -> fake_msc:camel_o_sms_submitted(MPid);
 		_ -> ok
 	end,
 	Msg;
@@ -458,7 +447,9 @@ save_sd(imsi, Imsi, Type, Val) ->
 							{Imsi, false, Val, Ts})
 			end
 	end,
-	dets_match_delete_after(timer:minutes(?CSI_TBL_TIMEOUT),
+	{ok, CsiTblTimeout} = application:get_env(mgw_nat,
+						  csi_tbl_timeout_mins),
+	dets_match_delete_after(timer:minutes(CsiTblTimeout),
 				csi_tbl,
 				{Imsi, '_', '_', Ts}), 
 	io:format("Saving Subscriber Data for imsi:~p ~p:~p~n",
@@ -485,12 +476,16 @@ delete_csi(Imsi) ->
 %% dets_match_delete_after
 
 dets_match_delete_after(Time, Name, Pattern) ->
-	timer:apply_after(Time, dets, match_delete, [Name, Pattern]).
+	io:format("*** deleting pattern ~p from table ~p after ~p~n",
+		  [Pattern, Name, Time]),
+    	timer:apply_after(Time, dets, match_delete, [Name, Pattern]).
 
 
 %% ets_delete_after
 
 ets_delete_after(Time, Tab, Key) ->
+	io:format("*** deleting key ~p from table ~p after ~p~n",
+		  [Key, Tab, Time]),
 	timer:apply_after(Time, ets, delete, [Tab, Key]).
 
 
@@ -593,10 +588,23 @@ convert_camelph_tbl(TblInName, TblOutName) ->
 
 
 init_config() ->
+	ets:new(imsi_tbl, [named_table, public]),
+	ets:new(mpid_tbl, [named_table, public]),
 	{ok, CsiTblFilename} = application:get_env(mgw_nat, csi_tbl_filename),
 	% fixme: do we need to close the table during shutdown?
-	{ok, _} = dets:open_file(csi_tbl, [{file, CsiTblFilename}]).
-	
+	{ok, _} = dets:open_file(csi_tbl, [{file, CsiTblFilename}]),
+	% restart timers for subscriber data timeout
+	{ok, CsiTblTimeout} = application:get_env(mgw_nat,
+						  csi_tbl_timeout_mins),
+	TimerVal = timer:minutes(CsiTblTimeout),
+	TravFun = fun({Key, _, _, Ts}) ->
+			  dets_match_delete_after(TimerVal,
+						  csi_tbl,
+						  {Key, '_', '_', Ts}),
+			  continue
+		  end,
+	dets:traverse(csi_tbl, TravFun).
+
 
 reload_config() ->
 	convert_camelph_tbl(camel_phase_patch_table,
