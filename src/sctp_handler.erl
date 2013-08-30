@@ -35,7 +35,7 @@
 
 -module(sctp_handler).
 -author("Harald Welte <laforge@gnumonks.org>").
--export([init/6, handle_sctp/2]).
+-export([init/2, handle_sctp/2]).
 
 -include_lib("kernel/include/inet.hrl").
 -include_lib("kernel/include/inet_sctp.hrl").
@@ -54,14 +54,26 @@
 
 -define(COMMON_SOCKOPTS, [{active, once}, {reuseaddr, true}, {sctp_nodelay, true}]).
 
+opts2local_stp(OptList) ->
+	opts2local_stp(OptList, []).
+opts2local_stp([], L) ->
+	L;
+opts2local_stp([{stp, {{Ip, Port}, _}}|Tail], L) ->
+	opts2local_stp(Tail, [{ip, Ip}, {port, Port}] ++ L);
+opts2local_stp([_|Tail], L) ->
+	opts2local_stp(Tail, L).
+
 % initialize the sockets towards MSC (listening) and STP (connect)
-init(MscLocalIP, MscLocalPort, MscRemoteIP, StpRemoteIP, StpRemotePort, RewriteActMod) ->
+init(Options, RewriteActMod) when is_list(Options) ->
+	{{MscLocalIP, MscLocalPort}, MscRemoteIP} = proplists:get_value(msc, Options),
+	{_, {StpRemoteIP, StpRemotePort}} = proplists:get_value(stp, Options),
 	{ok, MscSock} = gen_sctp:open([{ip, MscLocalIP},{port,MscLocalPort}]
 					++ ?COMMON_SOCKOPTS),
 	io:format("Listening for MSC on ~w:~w. ~w~n",
 			[MscLocalIP, MscLocalPort, MscSock]),
 	ok = gen_sctp:listen(MscSock, true),
-	{ok, StpSock} = gen_sctp:open(?COMMON_SOCKOPTS),
+	LocalSockOpts = opts2local_stp(Options),
+	{ok, StpSock} = gen_sctp:open(LocalSockOpts ++ ?COMMON_SOCKOPTS),
 	L = #loop_data{msc_sock = MscSock, msc_local_ip = MscLocalIP, 
 			msc_remote_ip = MscRemoteIP,
 			stp_sock = StpSock, stp_remote_ip = StpRemoteIP,

@@ -55,13 +55,17 @@ init(Params) ->
 	MscLocalIp = get_cfg_pl_val(msc_local_ip, Params),
 	MscLocalPort = get_cfg_pl_val(msc_local_port, Params),
 	MscRemoteIp = get_cfg_pl_val(msc_remote_ip, Params),
+	StpLocalIp = proplists:get_value(stp_local_ip, Params),
+	StpLocalPort = proplists:get_value(stp_local_port, Params),
 	StpRemoteIp = get_cfg_pl_val(stp_remote_ip, Params),
 	StpRemotePort = get_cfg_pl_val(stp_remote_port, Params),
 	RewriteActMod = get_cfg_pl_val(rewrite_act_mod, Params),
 	RewriteActMod:reload_config(),
-	SctpHdlrArgs =	[MscLocalIp, MscLocalPort, MscRemoteIp,
-			 StpRemoteIp, StpRemotePort, RewriteActMod],
-	{ok, LoopDat} = apply(sctp_handler, init, SctpHdlrArgs),
+	SctpHdlrArgs = [
+		{msc, {{MscLocalIp, MscLocalPort}, MscRemoteIp}},
+		{stp, {{StpLocalIp, StpLocalPort}, {StpRemoteIp, StpRemotePort}}}
+	],
+	{ok, LoopDat} = apply(sctp_handler, init, [SctpHdlrArgs, RewriteActMod]),
 	{ok, {Params, LoopDat}}.
 
 % this cast is produced by mgw_nat_sup child walker
