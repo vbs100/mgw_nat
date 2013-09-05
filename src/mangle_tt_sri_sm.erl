@@ -126,6 +126,8 @@ get_tcap_operation({returnResult, Rec}) ->
 	get_tcap_operation(Rec);
 get_tcap_operation({returnResultNotLast, Rec}) ->
 	get_tcap_operation(Rec);
+get_tcap_operation({returnError, _Rec}) ->
+	{returnError, undefined};
 % map.erl
 get_tcap_operation(#'MapSpecificPDUs_begin_components_SEQOF_basicROS_invoke'{opcode=Op}) ->
 	{invoke, Op};
