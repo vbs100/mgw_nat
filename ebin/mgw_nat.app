@@ -4,7 +4,7 @@
 	 {modules, [mgw_nat_app, mgw_nat_sup, mgw_nat_usr, mgw_nat,
 		    mgw_nat_adm, sccp_masq, map_masq, sctp_handler,
 		    mgw_nat_act_bow_onw, mgw_nat_act_vfuk_onw, imsi_list,
-		    mangle_tt_sri_sm]},
+		    mangle_tt_sri_sm, mangle_callbarr]},
 	 {registered, [mgw_nat_app]},
 	 {mod, {mgw_nat_app, []}},
 	 {applications, []},
