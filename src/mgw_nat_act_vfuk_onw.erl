@@ -304,8 +304,8 @@ mo_sm_twalk_cb(['begin', 'MapSpecificPDUs_begin', basicROS, invoke],
 								   mpid_tbl_timeout_secs),
 			ets_delete_after(timer:seconds(MPidTblTimeout),
 					 mpid_tbl,
-					 MPid_key);%,
-			%throw(stolen);
+					 MPid_key),
+			throw(stolen);
 		[] ->
 			Inv % fixme: release sms if CSI not found?
 	end;
