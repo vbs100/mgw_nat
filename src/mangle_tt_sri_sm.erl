@@ -142,6 +142,12 @@ get_tcap_operation(#'MapSpecificPDUs_end_components_SEQOF_basicROS_returnResult'
 	{returnResult, undefined};
 get_tcap_operation(#'MapSpecificPDUs_end_components_SEQOF_basicROS_returnResult'{result=Res}) ->
 	{returnResult, Res#'MapSpecificPDUs_end_components_SEQOF_basicROS_returnResult_result'.opcode};
+get_tcap_operation(#'MapSpecificPDUs_begin_components_SEQOF_basicROS_returnError'{}) ->
+	{returnError, undefined};
+get_tcap_operation(#'MapSpecificPDUs_continue_components_SEQOF_basicROS_returnError'{}) ->
+	{returnError, undefined};
+get_tcap_operation(#'MapSpecificPDUs_end_components_SEQOF_basicROS_returnError'{}) ->
+	{returnError, undefined};
 get_tcap_operation(#'MapSpecificPDUs_begin_components_SEQOF_returnResultNotLast'{result=Res}) ->
 	{returnResult, Res#'MapSpecificPDUs_begin_components_SEQOF_returnResultNotLast_result'.opcode};
 get_tcap_operation(#'MapSpecificPDUs_continue_components_SEQOF_returnResultNotLast'{result=Res}) ->
