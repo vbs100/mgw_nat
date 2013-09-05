@@ -72,8 +72,9 @@ rewrite_actor(sccp, from_msc, Path, SccpType, SccpDec) ->
 rewrite_actor(map, From, Path, 0, MapDec) ->
 	MapDec2 = mangle_map_camel_phase(From, Path, MapDec),
 	MapDec3 = mangle_map_subscriber_data(From, Path, MapDec2),
-	MapDec4 = intercept_map_mo_forward_sm(From, Path, MapDec3),
-	intercept_map_mo_forward_sm_resp(From, Path, MapDec4);
+	MapDec4 = mangle_isd_call_barr(From, Path, MapDec3),
+	MapDec5 = intercept_map_mo_forward_sm(From, Path, MapDec4),
+	intercept_map_mo_forward_sm_resp(From, Path, MapDec5);
 
 % Default action: no rewrite
 rewrite_actor(_Level, _From, _Path, _MsgType, Msg) ->
@@ -154,6 +155,12 @@ camelph_twalk_cb(_Path, Msg, _Args) ->
 %%%
 %%% Handle subscriber data related messages
 %%%
+
+% Rewrite callBarringInfo in InsertSubscriberDataArg HLR->VLR
+mangle_isd_call_barr(from_msc, _Path, MapDec) ->
+	osmo_util:tuple_walk(MapDec, fun mangle_callbarr:callbarr_twalk_cb/3, []);
+mangle_isd_call_barr(_From, _Path, MapDec) ->
+	MapDec.
 
 %% mangle_map_subscriber_data
 %%
