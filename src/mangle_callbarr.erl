@@ -37,7 +37,8 @@
 
 -include_lib("osmo_map/include/map.hrl").
 
--export([get_ss_bit/1, get_ss_bits/1, bs_cfglist_to_ext_cbf/1, mangle_isd_repl_cbi/1]).
+-export([get_ss_bit/1, get_ss_bits/1, bs_cfglist_to_ext_cbf/1, mangle_isd_repl_cbi/1,
+	 mangle_pss_list/1, match_pss_colr/1]).
 
 -export([callbarr_twalk_cb/3]).
 
@@ -74,26 +75,53 @@ bs_cfgtpl_to_ext_cbf({BS, Bits}) ->
 	OutBS = get_bs(BS),
 	OutBits = get_ss_bits(Bits),
 	#'Ext-CallBarringFeature'{basicService = {'ext-BearerService', OutBS},
-				  'ss-Status' = OutBits,
-				  extensionContainer = asn1_NOVALUE}.
+				  'ss-Status' = OutBits}.
 
 % convert a list of tuples like [{23,"QP"},{24,"RA"}] into a list of
 % 'Ext-CallBarringFeature'{} records
 bs_cfglist_to_ext_cbf(List) when is_list(List) ->
 	lists:map(fun bs_cfgtpl_to_ext_cbf/1, List).
 
-mangle_pss({callBarringInfo, EBI=#'Ext-CallBarInfo'{callBarringFeatureList = OL}}) ->
-	NL = case application:get_env(mgw_nat, mangle_callbarr_list) of
-		undefined -> OL;
-		{ok, PatchList} -> bs_cfglist_to_ext_cbf(PatchList)
-	end,
-	{callBarringInfo, EBI#'Ext-CallBarInfo'{callBarringFeatureList = NL}};
-mangle_pss({Foo, Bar}) ->
-	{Foo, Bar}.
+
+% generate a List element for the provisionedSS list containing our constructed
+% BAOC generated from the configuration file
+gen_baoc() ->
+	case application:get_env(mgw_nat, mangle_callbarr_list) of
+		undefined ->
+			[];
+		{ok, PatchList} ->
+			NL = bs_cfglist_to_ext_cbf(PatchList),
+			[{callBarringInfo,
+			  #'Ext-CallBarInfo'{'ss-Code' = ?'baoc',
+					     callBarringFeatureList = NL}}]
+	end.
+
+% match on a provosionedSS of COLR
+match_pss_colr({'ss-Data', #'Ext-SS-Data'{'ss-Code' = ?'colr'}}) -> true;
+match_pss_colr(_) -> false.
+
+% matcha and replace existing BAOC and replace it with our BAOC
+match_repl_baoc(In = {callBarringInfo, #'Ext-CallBarInfo'{'ss-Code' = ?'baoc'}}) ->
+	case gen_baoc() of
+		[] -> In;
+		[NewBaoc] -> NewBaoc
+	end;
+match_repl_baoc(In) -> In.
 
 
+mangle_pss_list(asn1_NOVALUE) ->
+	asn1_NOVALUE;
 mangle_pss_list(List) when is_list(List) ->
-	lists:map(fun mangle_pss/1, List).
+	% 1) if there is already BAOC inside, replace BAOC
+	List2 = lists:map(fun match_repl_baoc/1, List),
+	% 2) if there is COLR in the provisionedSS list, append our
+	% artificial BAOC element into the list
+	case lists:any(fun match_pss_colr/1, List2) of
+		true ->
+			List2 ++ gen_baoc();
+		false ->
+			List2
+	end.
 
 mangle_isd_repl_cbi(ISD = #'InsertSubscriberDataArg'{provisionedSS=PSS}) ->
 	ISD#'InsertSubscriberDataArg'{provisionedSS = mangle_pss_list(PSS)}.
