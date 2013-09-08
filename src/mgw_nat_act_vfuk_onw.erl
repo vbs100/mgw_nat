@@ -1,7 +1,7 @@
 % VFUK-ONW specific mgw_nat actor callback functions
 
-% (C) 2011 by Harald Welte <laforge@gnumonks.org>
-% (C) 2011 OnWaves
+% (C) 2011-2013 by Harald Welte <laforge@gnumonks.org>
+% (C) 2011-2013 OnWaves
 %
 % All Rights Reserved
 %
@@ -129,6 +129,20 @@ camelph_twalk_outb_cb(['begin', 'MapSpecificPDUs_begin', basicROS, invoke,
 	% Manipulate the VLR capabilities in UpdateLocationArg
 	Vc_out2 = Vc_out#'VLR-Capability'{supportedCamelPhases = PhaseL},
 	ULA#'UpdateLocationArg'{'vlr-Capability' = Vc_out2};
+%% Camel phases are also indicated in the returnResult to the InsertSubscriberData,
+%% where we need to patch them accordingly.
+camelph_twalk_outb_cb(['continue', 'MapSpecificPDUs_continue', basicROS, returnResult,
+		       'MapSpecificPDUs_continue_components_SEQOF_basicROS_returnResult',
+		       'MapSpecificPDUs_continue_components_SEQOF_basicROS_returnResult_result'],
+		      IsdRes = #'InsertSubscriberDataRes'{},
+		      [PhaseL, CallingPAddr, {Otid, _} | _]) ->
+	IsdRes#'InsertSubscriberDataRes'{supportedCamelPhases = PhaseL};
+camelph_twalk_outb_cb(['end', 'MapSpecificPDUs_end', basicROS, returnResult,
+		       'MapSpecificPDUs_end_components_SEQOF_basicROS_returnResult',
+		       'MapSpecificPDUs_end_components_SEQOF_basicROS_returnResult_result'],
+		      IsdRes = #'InsertSubscriberDataRes'{},
+		      [PhaseL, CallingPAddr, {Otid, _} | _]) ->
+	IsdRes#'InsertSubscriberDataRes'{supportedCamelPhases = PhaseL};
 
 camelph_twalk_outb_cb(_Path, Msg, _Args) ->
 	% Default case: simply return the unmodified tuple
