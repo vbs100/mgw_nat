@@ -195,8 +195,8 @@ handle_rx_data(_Mod, _L, From, SRInfo, Data) when is_binary(Data) ->
 	io:format("Unhandled Rx Data from SCTP from ~p: ~p, ~p~n", [From, SRInfo, Data]).
 
 
-sctp_local_out(L, From, OutData, SRInf) when is_record(L, loop_data),
-					     is_record(SRInf, sctp_sndrcvinfo) ->
+sctp_local_out(L, From, OutData, SRInf = #sctp_sndrcvinfo{ppid = 2, stream = Stream})
+								when is_record(L, loop_data) ->
 	case From of
 		from_msc ->
 			Sock = L#loop_data.stp_sock,
@@ -205,4 +205,5 @@ sctp_local_out(L, From, OutData, SRInf) when is_record(L, loop_data),
 			Sock = L#loop_data.msc_sock,
 			AssocId = L#loop_data.msc_assoc_id
 	end,
-	gen_sctp:send(Sock, SRInf#sctp_sndrcvinfo{assoc_id = AssocId}, OutData).
+	SRInf2 = #sctp_sndrcvinfo{ppid = 2, stream = Stream, assoc_id = AssocId},
+	ok = gen_sctp:send(Sock, SRInf2, OutData).
